@@ -1,0 +1,134 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email.lower() in ['oossdespachocargasqm@gmail.com', 'luis.robles.ramirez@gmail.com']
+      );
+    }
+
+    function isOperator() {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'operator' ||
+        request.auth.token.email.lower() == 'lavadosddee@gmail.com'
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'displayName', 'active']) &&
+             data.keys().size() == 4 &&
+             data.email is string && data.email.size() <= 128 &&
+             data.role in ['admin', 'operator'] &&
+             data.displayName is string && data.displayName.size() <= 128 &&
+             data.active is bool;
+    }
+
+    function isValidDefaultWashing(data) {
+      return data.keys().hasAll(['line', 'washingName', 'defaultQuantity', 'active', 'createdAt', 'createdBy', 'updatedAt']) &&
+             data.line in ['110 kV', '33 kV', '23 kV', '6,6 kV'] &&
+             data.washingName is string && data.washingName.size() <= 200 &&
+             data.defaultQuantity is number && data.defaultQuantity >= 0 &&
+             data.active is bool &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidWashingProgram(data) {
+      return data.keys().hasAll(['date', 'shift', 'line', 'washingName', 'programmedQuantity', 'type', 'priority', 'status', 'closed', 'createdAt', 'createdBy', 'updatedAt']) &&
+             data.date is string && // YYYY-MM-DD
+             data.shift in ['Dia', 'Noche'] &&
+             data.programmedQuantity is number && data.programmedQuantity > 0 &&
+             data.type in ['Equipos críticos', 'Planta', 'Periferia'] &&
+             data.priority in ['Obligatorio', 'Si hay tiempo disponible', 'Continuación de avance anterior'] &&
+             data.status in ['Pendiente', 'Completo', 'Parcial', 'No realizado', 'Cerrado'] &&
+             data.closed is bool &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidWashingRecord(data) {
+      return data.keys().hasAll(['programId', 'operatorEmail', 'status', 'programmedQuantity', 'completed', 'pending', 'percentage', 'registeredAt', 'updatedAt', 'syncStatus']) &&
+             isValidId(data.programId) &&
+             data.operatorEmail == request.auth.token.email &&
+             data.status in ['Completo', 'Parcial', 'No realizado'] &&
+             data.completed is number && data.pending is number &&
+             data.completed + data.pending == data.programmedQuantity &&
+             data.registeredAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create: if (isAdmin() || (isOwner(userId) && incoming().role == 'operator' && incoming().email.lower() == 'lavadosddee@gmail.com')) && isValidUser(incoming());
+      allow update: if (isAdmin() && isValidUser(incoming())) ||
+                     (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']));
+    }
+
+    match /defaultWashings/{washingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin(); // Using simple check for admin-only modules
+    }
+
+    match /washingPrograms/{programId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidWashingProgram(incoming());
+      allow update: if (isAdmin() && isValidWashingProgram(incoming())) ||
+                     (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && !existing().closed);
+      allow delete: if isAdmin();
+    }
+
+    match /washingRecords/{recordId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidWashingRecord(incoming()) && !get(/databases/$(database)/documents/washingPrograms/$(incoming().programId)).data.closed;
+      allow update: if isEmailVerified() && isValidWashingRecord(incoming()) && !get(/databases/$(database)/documents/washingPrograms/$(existing().programId)).data.closed;
+    }
+
+    match /changeHistory/{historyId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only manageable via console for bootstrap
+    }
+  }
+}

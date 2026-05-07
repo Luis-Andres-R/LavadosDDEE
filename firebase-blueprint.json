@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with roles",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "operator"] },
+        "displayName": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["email", "role", "active"]
+    },
+    "DefaultWashing": {
+      "title": "Default Washing",
+      "description": "Catalog of frequent washings",
+      "type": "object",
+      "properties": {
+        "line": { "type": "string", "enum": ["110 kV", "33 kV", "23 kV", "6,6 kV"] },
+        "washingName": { "type": "string" },
+        "defaultQuantity": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["line", "washingName", "defaultQuantity", "active"]
+    },
+    "WashingProgram": {
+      "title": "Washing Program",
+      "description": "A scheduled washing task",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "shift": { "type": "string", "enum": ["Dia", "Noche"] },
+        "line": { "type": "string" },
+        "washingName": { "type": "string" },
+        "programmedQuantity": { "type": "number" },
+        "type": { "type": "string", "enum": ["Equipos críticos", "Planta", "Periferia"] },
+        "priority": { "type": "string", "enum": ["Obligatorio", "Si hay tiempo disponible", "Continuación de avance anterior"] },
+        "assignedOperator": { "type": "string" },
+        "adminObservation": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pendiente", "Completo", "Parcial", "No realizado", "Cerrado"] },
+        "closed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "shift", "line", "washingName", "programmedQuantity", "type", "priority", "status", "closed"]
+    },
+    "WashingRecord": {
+      "title": "Washing Record",
+      "description": "Feedback/Response from the operator for a program",
+      "type": "object",
+      "properties": {
+        "programId": { "type": "string" },
+        "operatorEmail": { "type": "string" },
+        "status": { "type": "string" },
+        "programmedQuantity": { "type": "number" },
+        "completed": { "type": "number" },
+        "pending": { "type": "number" },
+        "percentage": { "type": "number" },
+        "reason": { "type": "string" },
+        "otherReason": { "type": "string" },
+        "observation": { "type": "string" },
+        "registeredAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "syncStatus": { "type": "string", "enum": ["synced", "pending"] }
+      },
+      "required": ["programId", "operatorEmail", "status", "completed", "pending", "percentage"]
+    },
+    "ChangeHistory": {
+      "title": "Change History",
+      "description": "Audit log for corrections",
+      "type": "object",
+      "properties": {
+        "programId": { "type": "string" },
+        "recordId": { "type": "string" },
+        "changedBy": { "type": "string" },
+        "changedAt": { "type": "string", "format": "date-time" },
+        "previousData": { "type": "object" },
+        "newData": { "type": "object" },
+        "correctionReason": { "type": "string" }
+      },
+      "required": ["programId", "changedBy", "changedAt", "previousData", "newData"]
+    },
+    "AdminConfig": {
+        "title": "Admin Config",
+        "description": "List of system admins",
+        "type": "object",
+        "properties": {
+            "email": { "type": "string" }
+        }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    },
+    "/defaultWashings/{washingId}": {
+      "schema": "DefaultWashing",
+      "description": "Catalog of default washings"
+    },
+    "/washingPrograms/{programId}": {
+      "schema": "WashingProgram",
+      "description": "Scheduled washing programs"
+    },
+    "/washingRecords/{recordId}": {
+      "schema": "WashingRecord",
+      "description": "Operator recorded washings"
+    },
+    "/changeHistory/{historyId}": {
+      "schema": "ChangeHistory",
+      "description": "Audit trail for modifications"
+    },
+    "/admins/{adminId}": {
+        "schema": "AdminConfig",
+        "description": "System admins control"
+    }
+  }
+}
