@@ -2,32 +2,52 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 0. Global Safety Net
+    // Default global deny catch-all
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Helpers ---
+    // --- Core Helper Functions ---
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isAdmin() {
+    // Returns true if the user is one of the predefined accounts or marked active in users database
+    function isActiveUser() {
       return isSignedIn() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email.lower() in ['oossdespachocargasqm@gmail.com', 'luis.robles.ramirez@gmail.com']
+        request.auth.token.email.lower() in [
+          'oossdespachocargasqm@gmail.com',
+          'lavadosddeet39@gmail.com',
+          'lavadosddee@gmail.com',
+          'luis.robles.ramirez@gmail.com'
+        ] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true)
       );
     }
 
+    // Returns true if the user is admin
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() in [
+          'oossdespachocargasqm@gmail.com',
+          'luis.robles.ramirez@gmail.com'
+        ] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Returns true if the user is operator
     function isOperator() {
       return isSignedIn() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'operator') ||
-        request.auth.token.email.lower() == 'lavadosddee@gmail.com'
+        request.auth.token.email.lower() in [
+          'lavadosddeet39@gmail.com',
+          'lavadosddee@gmail.com'
+        ] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'operator')
       );
     }
 
@@ -35,199 +55,116 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Validation Blueprints ---
-
-    function isValidUser(data) {
-      return data.keys().hasAll(['email', 'role', 'displayName', 'active']) &&
-             data.keys().size() >= 4 && data.keys().size() <= 6 &&
-             data.email is string && data.email.size() <= 128 &&
-             data.role in ['admin', 'operator'] &&
-             data.displayName is string && data.displayName.size() <= 128 &&
-             data.active is bool &&
-             (data.get('assignedShift', null) == null || data.assignedShift in ['T39', 'T44']);
-    }
-
-    function isValidDefaultWashing(data) {
-      return data.keys().hasAll(['line', 'segmentName', 'defaultQuantity', 'active', 'createdAt', 'createdBy', 'updatedAt']) &&
-             data.line in ['110 kV', '33 kV', '23 kV', '6,6 kV'] &&
-             data.segmentName is string && data.segmentName.size() <= 200 &&
-             data.defaultQuantity is number &&
-             data.active is bool &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time;
-    }
-
-    function isValidWashingProgram(data) {
-      return data.keys().hasAll(['date', 'shift', 'line', 'washingName', 'programmedQuantity', 'type', 'status', 'closed', 'createdAt', 'createdBy', 'updatedAt']) &&
-             data.date is string &&
-             data.shift in ['T39', 'T44'] &&
-             data.line is string &&
-             data.washingName is string &&
-             data.programmedQuantity is number &&
-             data.type is string &&
-             data.status in ['Pendiente', 'Completo', 'Parcial', 'No realizado', 'Cerrado'] &&
-             data.closed is bool &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time &&
-             // Allow optional or extra fields without strict total key count
-             (data.get('adminObservation', '') is string) &&
-             (data.get('washingOperator', '') is string) &&
-             (data.get('truck', '') is string);
-    }
-
-    function isValidWashingRecord(data) {
-      return data.keys().hasAll(['programId', 'operatorEmail', 'status', 'programmedQuantity', 'completed', 'pending', 'percentage', 'registeredAt', 'updatedAt', 'syncStatus']) &&
-             isValidId(data.programId) &&
-             data.operatorEmail == request.auth.token.email &&
-             data.status in ['Completo', 'Parcial', 'No realizado'] &&
-             data.completed is number && data.pending is number &&
-             data.completed + data.pending == data.programmedQuantity &&
-             data.registeredAt == request.time &&
-             data.updatedAt == request.time;
-    }
-
-    function isValidOperationalReading(data) {
-      return data.keys().hasAll(['date', 'shift', 'operatorEmail', 'washingOperator', 'truck', 'readings', 'createdAt', 'updatedAt']) &&
-             data.date is string &&
-             data.shift in ['T39', 'T44'] &&
-             data.readings is map &&
-             data.readings.TKA.us is number &&
-             data.readings.TKC.us is number &&
-             data.readings.TKD.us is number &&
-             data.readings.potableWater.us is number &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time;
-    }
-
-    function isValidOperatingHours(data) {
-      return data.keys().hasAll(['date', 'shift', 'truck', 'operatorEmail', 'washingOperator', 'theoreticalHours', 'operationalHours', 'deductedHours', 'failureDetectedAt', 'reason', 'detail', 'createdAt', 'updatedAt']) &&
-             data.date is string &&
-             data.theoreticalHours is number &&
-             data.operationalHours is number &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time;
-    }
-
-    function isValidTruck(data) {
-      return data.keys().hasAll(['code', 'status', 'active', 'updatedAt', 'updatedBy']) &&
-             data.code is string &&
-             data.status in ['En servicio', 'Fuera de servicio', 'Disponible'] &&
-             data.active is bool &&
-             data.updatedBy is string;
-    }
-
-    function isValidTruckStatusHistory(data) {
-      return data.keys().hasAll(['date', 'shift', 'trucks', 'savedAt', 'savedBy']) &&
-             data.date is string &&
-             data.shift in ['T39', 'T44'] &&
-             data.trucks is list &&
-             data.savedAt == request.time &&
-             data.savedBy is string;
-    }
-
-    function isValidOutOfProgramWashing(data) {
-      return data.keys().hasAll(['date', 'shift', 'truck', 'areaLocation', 'description', 'reason', 'requestedBy', 'detectionTime', 'status', 'operatorEmail', 'createdBy', 'createdAt', 'updatedAt']) &&
-             data.date is string &&
-             data.shift in ['T39', 'T44'] &&
-             data.truck in ['CM95', 'CM97'] &&
-             data.areaLocation is string &&
-             data.description is string &&
-             data.reason is string &&
-             data.requestedBy is string &&
-             data.detectionTime is string &&
-             data.status in ['Realizado', 'Pendiente', 'No realizado'] &&
-             data.operatorEmail is string &&
-             data.createdBy is string &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time &&
-             (data.get('quantity', 0) is number || data.get('quantity', null) == null) &&
-             (data.get('observation', '') is string);
-    }
-
-    // --- Collection Rules ---
+    // --- Collection Rule Matches ---
 
     match /users/{userId} {
-      allow get: if isSignedIn();
-      allow list: if isAdmin() || (isSignedIn() && (resource.data.email == request.auth.token.email || resource.data.uid == request.auth.uid));
-      allow create: if (isAdmin() || isOwner(userId)) && isValidUser(incoming());
-      allow update: if (isAdmin() && isValidUser(incoming())) ||
-                     (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']));
+      allow read: if isSignedIn();
+      allow create, update: if (isAdmin() || isOwner(userId));
+      allow delete: if isAdmin();
     }
 
     match /defaultWashings/{washingId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isActiveUser();
     }
 
     match /washingProgramTemplates/{templateId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isActiveUser();
     }
 
     match /washingPrograms/{programId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() && isValidWashingProgram(incoming());
-      allow update: if (isAdmin() && isValidWashingProgram(incoming())) ||
-                     (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'completedCount', 'pendingCount', 'percentage', 'lastUpdatedBy', 'reason', 'items', 'areaName', 'packageName', 'controlType']) && !existing().closed);
+      allow create: if isAdmin() || isActiveUser();
+      allow update: if isAdmin() || (isActiveUser() && !resource.data.closed);
       allow delete: if isAdmin();
     }
 
     match /washingRecords/{recordId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidWashingRecord(incoming()) && !get(/databases/$(database)/documents/washingPrograms/$(incoming().programId)).data.closed;
-      allow update: if isSignedIn() && isValidWashingRecord(incoming()) && !get(/databases/$(database)/documents/washingPrograms/$(existing().programId)).data.closed;
+      allow create, update: if isAdmin() || isActiveUser();
+      allow delete: if isAdmin();
     }
 
     match /changeHistory/{historyId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isActiveUser();
       allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
     match /admins/{adminId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /operationalReadings/{readingId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidOperationalReading(incoming());
-      allow update: if isAdmin() && isValidOperationalReading(incoming());
+      allow create, update: if isAdmin() || isActiveUser();
+      allow delete: if isAdmin();
     }
 
     match /truckOperatingHours/{id} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidOperatingHours(incoming());
-      allow update: if isAdmin() && isValidOperatingHours(incoming());
+      allow create, update: if isAdmin() || isActiveUser();
+      allow delete: if isAdmin();
     }
 
     match /trucks/{truckId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidTruck(incoming());
+      allow write: if isAdmin() || isActiveUser();
     }
 
     match /truckStatusHistory/{historyId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidTruckStatusHistory(incoming());
+      allow write: if isAdmin() || isActiveUser();
     }
 
     match /outOfProgramWashings/{id} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidOutOfProgramWashing(incoming());
-      allow update: if (isAdmin() && isValidOutOfProgramWashing(incoming())) ||
-                     (isSignedIn() && isValidOutOfProgramWashing(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'observation', 'quantity', 'areaLocation', 'description', 'reason', 'requestedBy', 'detectionTime', 'truck']));
+      allow create, update: if isAdmin() || isActiveUser();
       allow delete: if isAdmin();
+    }
+
+    // Paths/collections specifically requested or configured for version 2
+
+    match /dailyWashingPrograms/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /records/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /records/programs/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /records/{id}/programs/{subId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /records/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /temperatures/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /conductivityReadings/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
+    }
+
+    match /reports/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isActiveUser();
     }
   }
 }
