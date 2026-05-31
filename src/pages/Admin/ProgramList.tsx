@@ -109,23 +109,30 @@ export default function ProgramList() {
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wider ${
-                        program.status === 'Completo' || program.status === 'Cerrado' ? 'bg-emerald-100 text-emerald-700' :
-                        program.status === 'Parcial' ? 'bg-amber-100 text-amber-700' :
-                        program.status === 'No realizado' ? 'bg-red-100 text-red-700' :
+                        program.status === 'Completo' || program.status === 'Cerrado' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                        program.status === 'Parcial' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                        program.status === 'No realizado' ? 'bg-red-100 text-red-700 border border-red-200' :
                         'bg-slate-100 text-slate-700'
                     }`}>
                         {program.status}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700 uppercase tracking-widest border border-blue-100">
-                        {program.line}
+                        {program.controlType ? (program.controlType === 'checklist' ? '📋 Checklist' : '🔢 Cantidad') : (program.line || 'Lavado')}
                     </span>
+                    {program.areaName && (
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-700 uppercase tracking-widest border border-slate-250">
+                        {program.areaName}
+                      </span>
+                    )}
                     {program.closed && (
                       <span className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black text-white uppercase tracking-widest">
                         Cerrado
                       </span>
                     )}
                 </div>
-                <h4 className="text-xl font-black text-slate-900 tracking-tight">{program.washingName}</h4>
+                <h4 className="text-xl font-black text-slate-900 tracking-tight">
+                  {program.packageName || program.washingName}
+                </h4>
               </div>
               <div className="flex gap-2">
                 <button 

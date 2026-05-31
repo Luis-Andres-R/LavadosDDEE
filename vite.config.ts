@@ -14,9 +14,9 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         manifest: {
-          name: 'Control de Lavados DDEE',
-          short_name: 'LavadosDDEE',
-          description: 'Control de programas de lavado minero',
+          name: 'Programa de Lavados SQM',
+          short_name: 'Lavados SQM',
+          description: 'Aplicación para control y seguimiento de lavados DDEE',
           theme_color: '#2563eb',
           icons: [
             {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, serverTimestamp, getDocs, orderBy, onSnapshot } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { ShiftType, WASHING_OPERATORS, OperationalReading, TruckInfo } from '../types';
+import { ShiftType, WASHING_OPERATORS, OperationalReading, TruckInfo, WASHING_TRUCKS } from '../types';
 import { Save, Thermometer, Droplets, Gauge, Truck, CheckCircle2 } from 'lucide-react';
 
 export default function ReadingsForm() {
@@ -27,9 +27,9 @@ export default function ReadingsForm() {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'trucks'), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckInfo));
-      const activeTrucks = data.filter(t => t.active && (t.status === 'En servicio' || t.status === 'Disponible'));
+      const activeTrucks = data.filter(t => t.active && WASHING_TRUCKS.includes(t.code) && (t.status === 'En servicio' || t.status === 'Disponible'));
       setTrucks(activeTrucks);
-      if (activeTrucks.length > 0 && !formData.truck) {
+      if (activeTrucks.length > 0 && (!formData.truck || !activeTrucks.some(t => t.code === formData.truck))) {
         setFormData(p => ({ ...p, truck: activeTrucks[0].code }));
       }
     });

@@ -18,8 +18,8 @@ export default function Login() {
           <div className="flex justify-center mb-6">
             <Logo className="h-16" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">DDEE Lavados</h1>
-          <p className="mt-2 text-sm font-medium text-slate-400 uppercase tracking-widest">Sistema de Gestión Minera</p>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 leading-tight">Programa de Lavados SQM</h1>
+          <p className="mt-2 text-xs font-medium text-slate-400 uppercase tracking-wider leading-relaxed">Control y seguimiento de lavados DDEE</p>
         </div>
 
         <div className="p-10">

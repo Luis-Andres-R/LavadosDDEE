@@ -1,6 +1,6 @@
 {
-  "name": "Control de Lavados DDEE",
-  "description": "Aplicación profesional para el control y planificación de programas de lavado en operaciones mineras, con roles de administrador y operador.",
+  "name": "Programa de Lavados SQM",
+  "description": "Aplicación para control y seguimiento de lavados DDEE",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

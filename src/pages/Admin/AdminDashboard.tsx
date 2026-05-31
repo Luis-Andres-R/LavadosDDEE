@@ -26,6 +26,7 @@ import Reports from './Reports';
 import OperationalReadings from './OperationalReadings';
 import TruckStatusManager from './TruckStatusManager';
 import TruckOperatingHoursManager from './TruckOperatingHours';
+import OutOfProgramList from './OutOfProgramList';
 import ProgramForm from './ProgramForm';
 import Logo from '../../components/Logo';
 import { motion, AnimatePresence } from 'motion/react';
@@ -36,7 +37,7 @@ import { Truck } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { logout, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'programs' | 'catalog' | 'reports' | 'readings' | 'trucks' | 'hours'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'catalog' | 'reports' | 'readings' | 'trucks' | 'hours' | 'outOfProgram'>('programs');
   const [showProgramForm, setShowProgramForm] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
@@ -86,12 +87,6 @@ export default function AdminDashboard() {
             label="Inicio" 
           />
           <SidebarLink 
-            active={activeTab === 'catalog'} 
-            onClick={() => setActiveTab('catalog')} 
-            icon={<Settings size={18} />} 
-            label="Agregar nueva línea" 
-          />
-          <SidebarLink 
             active={activeTab === 'reports'} 
             onClick={() => setActiveTab('reports')} 
             icon={<FileText size={18} />} 
@@ -110,10 +105,10 @@ export default function AdminDashboard() {
             label="Estado Camiones" 
           />
           <SidebarLink 
-            active={activeTab === 'hours'} 
-            onClick={() => setActiveTab('hours')} 
-            icon={<Clock size={18} />} 
-            label="Horas Operativas" 
+            active={activeTab === 'outOfProgram'} 
+            onClick={() => setActiveTab('outOfProgram')} 
+            icon={<AlertTriangle size={18} />} 
+            label="Fuera de programa" 
           />
         </nav>
 
@@ -148,6 +143,7 @@ export default function AdminDashboard() {
                activeTab === 'reports' ? 'Reportes y Analíticas' : 
                activeTab === 'readings' ? 'Condiciones de Agua y Estanques' : 
                activeTab === 'trucks' ? 'Disponibilidad de Flota' :
+               activeTab === 'outOfProgram' ? 'Registros Fuera de Programa' :
                'Horas Operativas Acumuladas'}
             </h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Control de Eficiencia Operativa</p>
@@ -200,6 +196,7 @@ export default function AdminDashboard() {
               {activeTab === 'readings' && <OperationalReadings />}
               {activeTab === 'trucks' && <TruckStatusManager onHome={() => setActiveTab('programs')} />}
               {activeTab === 'hours' && <TruckOperatingHoursManager />}
+              {activeTab === 'outOfProgram' && <OutOfProgramList />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -216,10 +213,6 @@ export default function AdminDashboard() {
             <ClipboardList size={24} />
             <span className="text-[10px] font-bold">Inicio</span>
           </button>
-          <button onClick={() => setActiveTab('catalog')} className={`flex flex-col items-center p-2 ${activeTab === 'catalog' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <Settings size={24} />
-            <span className="text-[10px] font-bold">Catálogo</span>
-          </button>
           <button onClick={() => setActiveTab('reports')} className={`flex flex-col items-center p-2 ${activeTab === 'reports' ? 'text-blue-600' : 'text-slate-400'}`}>
             <FileText size={24} />
             <span className="text-[10px] font-bold">KPI</span>
@@ -232,9 +225,9 @@ export default function AdminDashboard() {
             <Truck size={24} />
             <span className="text-[10px] font-bold">Camiones</span>
           </button>
-          <button onClick={() => setActiveTab('hours')} className={`flex flex-col items-center p-2 ${activeTab === 'hours' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <Clock size={24} />
-            <span className="text-[10px] font-bold">Horas</span>
+          <button onClick={() => setActiveTab('outOfProgram')} className={`flex flex-col items-center p-2 ${activeTab === 'outOfProgram' ? 'text-blue-600' : 'text-slate-400'}`}>
+            <AlertTriangle size={24} />
+            <span className="text-[10px] font-bold">Eventos</span>
           </button>
           <button onClick={logout} className="flex flex-col items-center p-2 text-red-500">
             <LogOut size={24} />

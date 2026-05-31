@@ -25,31 +25,73 @@ export const generatePDFReport = async (
   doc.rect(0, 10, pageWidth, 25, 'F');
   
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.text('CONTROL DE LAVADOS DDEE - SQM', 15, 27);
+  doc.setFontSize(16);
+  doc.text('PROGRAMA DE LAVADOS SQM', 15, 24);
+  
+  doc.setFontSize(9);
+  doc.text('Control de Lavados DDEE', 15, 30);
   
   doc.setFontSize(8);
   doc.text(`TIPO: ${type.toUpperCase()}`, pageWidth - 15, 18, { align: 'right' });
   doc.text(`PERIODO: ${range.start} AL ${range.end}`, pageWidth - 15, 23, { align: 'right' });
   doc.text(`GENERADO: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth - 15, 28, { align: 'right' });
 
-  // Summary Stats
-  const total = data.length;
-  const completes = data.filter(p => p.status === 'Completo' || p.status === 'Cerrado').length;
-  const partials = data.filter(p => p.status === 'Parcial').length;
-  const failed = data.filter(p => p.status === 'No realizado').length;
-  const pending = data.filter(p => p.status === 'Pendiente').length;
-  const compliance = total > 0 ? ((completes / total) * 100).toFixed(1) : 0;
+  // Helper to calculate structures/equipments for a WashingProgram based on checklist/cantidad
+  const getProgramStructures = (p: WashingProgram) => {
+    const isChecklist = p.controlType === 'checklist' || (p.items && p.items.length > 0);
+    let programmed = 0;
+    let completed = 0;
+
+    if (isChecklist) {
+      programmed = p.items?.length || p.programmedQuantity || 0;
+      if (p.status === 'Completo' || p.status === 'Cerrado') {
+        completed = programmed;
+      } else if (p.status === 'No realizado') {
+        completed = 0;
+      } else {
+        completed = p.items?.filter(item => item.done).length ?? p.completedCount ?? 0;
+      }
+    } else {
+      programmed = p.programmedQuantity || 0;
+      if (p.status === 'Completo' || p.status === 'Cerrado') {
+        completed = programmed;
+      } else if (p.status === 'No realizado') {
+        completed = 0;
+      } else {
+        completed = p.completedCount ?? 0;
+      }
+    }
+
+    completed = Math.max(0, Math.min(programmed, completed));
+    const pending = Math.max(0, programmed - completed);
+
+    return { programmed, completed, pending };
+  };
+
+  // Official Program calculations (Structures/equipments bases)
+  let totalEstructurasProgramadas = 0;
+  let totalEstructurasRealizadas = 0;
+  let totalEstructurasPendientes = 0;
+
+  data.forEach(p => {
+    const { programmed, completed, pending } = getProgramStructures(p);
+    totalEstructurasProgramadas += programmed;
+    totalEstructurasRealizadas += completed;
+    totalEstructurasPendientes += pending;
+  });
+
+  const percentageCumplimiento = totalEstructurasProgramadas > 0 
+    ? ((totalEstructurasRealizadas / totalEstructurasProgramadas) * 100).toFixed(1) 
+    : "0.0";
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(14);
-  doc.text('Resumen Ejecutivo (Lavados)', 15, 65);
+  doc.text('Resumen Ejecutivo (Estructuras / Equipos)', 15, 65);
   
   doc.setFontSize(9);
   const stats = [
-    [`Total Programas: ${total}`, `Completos: ${completes}`],
-    [`Parciales: ${partials}`, `No Realizados: ${failed}`],
-    [`Pendientes: ${pending}`, `Cumplimiento: ${compliance}%`]
+    [`Total Estructuras Programadas: ${totalEstructurasProgramadas}`, `Estructuras Realizadas: ${totalEstructurasRealizadas}`],
+    [`Estructuras Pendientes: ${totalEstructurasPendientes}`, `Cumplimiento Oficial: ${percentageCumplimiento}%`]
   ];
   
   stats.forEach((row, i) => {
@@ -96,34 +138,58 @@ export const generatePDFReport = async (
   doc.setFontSize(14);
   doc.text('Resumen de Horas Operativas por Camión', 15, currentY);
 
-  // Group operational hours by truck
+  // Group operational hours specifically for CM95, CM97, CM10, CM49. CM58 excluded.
   const finalTruckSummary: Record<string, { expected: number, operational: number, deducted: number, reasons: string[] }> = {};
+  const validTrucks = ['CM95', 'CM97', 'CM10', 'CM49'];
   
-  // Calculate summary based on registered programs to know which trucks were assigned
-  const assignedTruckShifts = Array.from(new Set(data.map(d => `${d.date}_${d.shift}_${d.truck}`)));
-  
-  assignedTruckShifts.forEach(key => {
-    const [date, shift, truckRaw] = key.split('_');
-    const truck = (truckRaw === 'undefined' || !truckRaw || truckRaw === 'null') ? 'Sin camión asignado' : truckRaw;
+  validTrucks.forEach(truck => {
+    finalTruckSummary[truck] = { expected: 0, operational: 0, deducted: 0, reasons: [] };
+  });
 
-    if (!finalTruckSummary[truck]) {
-      finalTruckSummary[truck] = { expected: 0, operational: 0, deducted: 0, reasons: [] };
-    }
-    
-    // Default: 12 hours assigned
-    finalTruckSummary[truck].expected += 12;
-    
-    // Check if there's a recorded failure for this day/shift/truck
-    const failure = opHours.find(h => h.date === date && h.shift === shift && h.truck === truckRaw);
-    if (failure) {
-      finalTruckSummary[truck].operational += failure.operationalHours;
-      finalTruckSummary[truck].deducted += failure.deductedHours;
-      if (failure.reason && !finalTruckSummary[truck].reasons.includes(failure.reason)) {
-        finalTruckSummary[truck].reasons.push(failure.reason);
+  // Extract all unique dates evaluated in the report range from any records
+  const uniqueDates = new Set<string>();
+  data.forEach(p => uniqueDates.add(p.date));
+  statusHistory.forEach(h => uniqueDates.add(h.date));
+  opHours.forEach(o => uniqueDates.add(o.date));
+
+  if (uniqueDates.size === 0) {
+    uniqueDates.add(range.start);
+  }
+
+  // "El lavado solo se realiza en turno día. No existe operación nocturna de lavado."
+  // Only check shift 'T39' (Day Shift). 12 Operational hours base.
+  const shift = 'T39';
+
+  uniqueDates.forEach(date => {
+    validTrucks.forEach(truck => {
+      finalTruckSummary[truck].expected += 12; // Base 12 hours for day shift
+
+      // Check if status is "En servicio" during this day's shift
+      const statusRecord = statusHistory.find(h => h.date === date && h.shift === shift);
+      const truckStatus = statusRecord?.trucks.find(t => t.code === truck)?.status;
+
+      if (truckStatus === 'En servicio') {
+        const failure = opHours.find(h => h.date === date && h.shift === shift && h.truck === truck);
+        
+        if (failure) {
+          finalTruckSummary[truck].operational += failure.operationalHours;
+          finalTruckSummary[truck].deducted += failure.deductedHours;
+          if (failure.reason && !finalTruckSummary[truck].reasons.includes(failure.reason)) {
+            finalTruckSummary[truck].reasons.push(failure.reason);
+          }
+        } else {
+          finalTruckSummary[truck].operational += 12;
+        }
+      } else {
+        // Not "En servicio" -> 0 operational hours, 12 deducted hours passed
+        finalTruckSummary[truck].deducted += 12;
+        
+        const label = truckStatus ? `Estado: ${truckStatus}` : 'Sin registro de estado';
+        if (!finalTruckSummary[truck].reasons.includes(label)) {
+          finalTruckSummary[truck].reasons.push(label);
+        }
       }
-    } else {
-      finalTruckSummary[truck].operational += 12;
-    }
+    });
   });
 
   const opHoursTable = Object.entries(finalTruckSummary).map(([truck, stats]) => [
@@ -131,7 +197,7 @@ export const generatePDFReport = async (
     stats.expected.toFixed(1),
     stats.operational.toFixed(1),
     stats.deducted.toFixed(1),
-    `${((stats.operational / stats.expected) * 100 || 0).toFixed(1)}%`,
+    `${stats.expected > 0 ? ((stats.operational / stats.expected) * 100).toFixed(1) : '100.0'}%`,
     stats.reasons.join(', ') || 'Sin Novedad'
   ]);
 

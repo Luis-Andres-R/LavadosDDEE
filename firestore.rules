@@ -55,7 +55,8 @@ service cloud.firestore {
              data.email is string && data.email.size() <= 128 &&
              data.role in ['admin', 'operator'] &&
              data.displayName is string && data.displayName.size() <= 128 &&
-             data.active is bool;
+             data.active is bool &&
+             (data.get('assignedShift', null) == null || data.assignedShift in ['T39', 'T44']);
     }
 
     function isValidDefaultWashing(data) {
@@ -72,10 +73,10 @@ service cloud.firestore {
       return data.keys().hasAll(['date', 'shift', 'line', 'washingName', 'programmedQuantity', 'type', 'status', 'closed', 'createdAt', 'createdBy', 'updatedAt']) &&
              data.date is string &&
              data.shift in ['T39', 'T44'] &&
-             data.line in ['110 kV', '33 kV', '23 kV', '6,6 kV'] &&
+             data.line is string &&
              data.washingName is string &&
-             data.programmedQuantity is number && data.programmedQuantity > 0 &&
-             data.type in ['Equipos críticos', 'Planta', 'Periferia'] &&
+             data.programmedQuantity is number &&
+             data.type is string &&
              data.status in ['Pendiente', 'Completo', 'Parcial', 'No realizado', 'Cerrado'] &&
              data.closed is bool &&
              data.createdAt == request.time &&
@@ -136,11 +137,30 @@ service cloud.firestore {
              data.savedBy is string;
     }
 
+    function isValidOutOfProgramWashing(data) {
+      return data.keys().hasAll(['date', 'shift', 'truck', 'areaLocation', 'description', 'reason', 'requestedBy', 'detectionTime', 'status', 'operatorEmail', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.date is string &&
+             data.shift in ['T39', 'T44'] &&
+             data.truck in ['CM95', 'CM97'] &&
+             data.areaLocation is string &&
+             data.description is string &&
+             data.reason is string &&
+             data.requestedBy is string &&
+             data.detectionTime is string &&
+             data.status in ['Realizado', 'Pendiente', 'No realizado'] &&
+             data.operatorEmail is string &&
+             data.createdBy is string &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time &&
+             (data.get('quantity', 0) is number || data.get('quantity', null) == null) &&
+             (data.get('observation', '') is string);
+    }
+
     // --- Collection Rules ---
 
     match /users/{userId} {
       allow get: if isSignedIn();
-      allow list: if isAdmin();
+      allow list: if isAdmin() || (isSignedIn() && (resource.data.email == request.auth.token.email || resource.data.uid == request.auth.uid));
       allow create: if (isAdmin() || isOwner(userId)) && isValidUser(incoming());
       allow update: if (isAdmin() && isValidUser(incoming())) ||
                      (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']));
@@ -151,11 +171,16 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /washingProgramTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /washingPrograms/{programId} {
       allow read: if isSignedIn();
       allow create: if isAdmin() && isValidWashingProgram(incoming());
       allow update: if (isAdmin() && isValidWashingProgram(incoming())) ||
-                     (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'completedCount', 'pendingCount', 'percentage', 'lastUpdatedBy', 'reason']) && !existing().closed);
+                     (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'completedCount', 'pendingCount', 'percentage', 'lastUpdatedBy', 'reason', 'items', 'areaName', 'packageName', 'controlType']) && !existing().closed);
       allow delete: if isAdmin();
     }
 
@@ -195,6 +220,14 @@ service cloud.firestore {
     match /truckStatusHistory/{historyId} {
       allow read: if isSignedIn();
       allow write: if isAdmin() && isValidTruckStatusHistory(incoming());
+    }
+
+    match /outOfProgramWashings/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidOutOfProgramWashing(incoming());
+      allow update: if (isAdmin() && isValidOutOfProgramWashing(incoming())) ||
+                     (isSignedIn() && isValidOutOfProgramWashing(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'observation', 'quantity', 'areaLocation', 'description', 'reason', 'requestedBy', 'detectionTime', 'truck']));
+      allow delete: if isAdmin();
     }
   }
 }

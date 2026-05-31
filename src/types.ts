@@ -5,6 +5,7 @@ export interface UserProfile {
   email: string;
   role: Role;
   displayName: string;
+  assignedShift: ShiftType | null;
   active: boolean;
 }
 
@@ -40,9 +41,35 @@ export interface TruckInfo {
   updatedBy: string;
 }
 
-export const INITIAL_TRUCKS = ['CM95', 'CM97', 'CM10', 'CM49', 'CM58'];
+export const INITIAL_TRUCKS = ['CM95', 'CM97', 'CM10', 'CM49'];
+export const WASHING_TRUCKS = ['CM95', 'CM97'];
 
 export type ProgramStatus = 'Pendiente' | 'Completo' | 'Parcial' | 'No realizado' | 'Cerrado';
+
+export interface ChecklistItem {
+  itemName: string;
+  order: number;
+  active: boolean;
+  done?: boolean;
+  doneAt?: string; // YYYY-MM-DD
+  doneHour?: string; // HH:mm
+  operatorEmail?: string;
+  operatorName?: string;
+  shift?: ShiftType;
+  truck?: string;
+}
+
+export interface WashingProgramTemplate {
+  id?: string;
+  areaName: 'Equipos críticos CS' | 'Interior planta CS' | 'Equipos críticos en periferia' | 'Lavado periferia';
+  packageName: string;
+  controlType: 'checklist' | 'cantidad';
+  quantity?: number;
+  items?: { itemName: string; order: number; active: boolean }[];
+  active: boolean;
+  createdAt: any;
+  updatedAt: any;
+}
 
 export interface WashingProgram {
   id?: string;
@@ -60,6 +87,12 @@ export interface WashingProgram {
   createdAt: any;
   createdBy: string;
   updatedAt: any;
+  
+  // Version 2 fields
+  areaName?: 'Equipos críticos CS' | 'Interior planta CS' | 'Equipos críticos en periferia' | 'Lavado periferia';
+  packageName?: string;
+  controlType?: 'checklist' | 'cantidad';
+  items?: ChecklistItem[];
   
   // Realized data (calculated or stored summary)
   completedCount?: number;
@@ -166,6 +199,39 @@ export interface TruckStatusHistory {
   savedAt: any;
   savedBy: string;
 }
+
+export interface OutOfProgramWashing {
+  id?: string;
+  date: string;
+  shift: ShiftType;
+  truck: string;
+  areaLocation: string;
+  description: string;
+  reason: string;
+  requestedBy: string;
+  detectionTime: string;
+  quantity?: number;
+  status: 'Programado' | 'Realizado' | 'Pendiente' | 'No realizado';
+  observation?: string;
+  operatorEmail: string;
+  createdBy: string;
+  createdAt: any;
+  updatedAt: any;
+  assignedBy?: string;
+  assignedAt?: any;
+  completedAt?: any;
+}
+
+export const OUT_OF_PROGRAM_REASONS = [
+  'Punto caliente',
+  'Emergencia operacional',
+  'Solicitud de supervisión',
+  'Condición de terreno',
+  'Contaminación puntual',
+  'Riesgo eléctrico',
+  'Apoyo a otra área',
+  'Otro'
+];
 
 export const SHIFT_CONFIG = {
   T39: { start: '08:00', end: '20:00', total: 12 },

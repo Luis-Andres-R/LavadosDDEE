@@ -2,12 +2,13 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "System user with roles",
+      "description": "System user with roles and shift assignments",
       "type": "object",
       "properties": {
         "email": { "type": "string" },
         "role": { "type": "string", "enum": ["admin", "operator"] },
         "displayName": { "type": "string" },
+        "assignedShift": { "type": "string" },
         "active": { "type": "boolean" }
       },
       "required": ["email", "role", "active"]
@@ -26,6 +27,22 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["line", "washingName", "defaultQuantity", "active"]
+    },
+    "WashingProgramTemplate": {
+      "title": "Washing Program Template",
+      "description": "Predefined washing packages with control type and checklist or quantity",
+      "type": "object",
+      "properties": {
+        "areaName": { "type": "string", "enum": ["Equipos críticos CS", "Interior planta CS", "Equipos críticos en periferia", "Lavado periferia"] },
+        "packageName": { "type": "string" },
+        "controlType": { "type": "string", "enum": ["checklist", "cantidad"] },
+        "quantity": { "type": "number" },
+        "items": { "type": "array" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["areaName", "packageName", "controlType", "active"]
     },
     "WashingProgram": {
       "title": "Washing Program",
@@ -92,6 +109,29 @@
         "properties": {
             "email": { "type": "string" }
         }
+    },
+    "OutOfProgramWashing": {
+      "title": "Out Of Program Washing",
+      "description": "Washings registered outside the planned official program",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "shift": { "type": "string", "enum": ["T39", "T44"] },
+        "truck": { "type": "string", "enum": ["CM95", "CM97"] },
+        "areaLocation": { "type": "string" },
+        "description": { "type": "string" },
+        "reason": { "type": "string" },
+        "requestedBy": { "type": "string" },
+        "detectionTime": { "type": "string" },
+        "quantity": { "type": "number" },
+        "status": { "type": "string", "enum": ["Realizado", "Pendiente", "No realizado"] },
+        "observation": { "type": "string" },
+        "operatorEmail": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "shift", "truck", "areaLocation", "description", "reason", "requestedBy", "detectionTime", "status", "operatorEmail", "createdBy"]
     }
   },
   "firestore": {
@@ -102,6 +142,10 @@
     "/defaultWashings/{washingId}": {
       "schema": "DefaultWashing",
       "description": "Catalog of default washings"
+    },
+    "/washingProgramTemplates/{templateId}": {
+      "schema": "WashingProgramTemplate",
+      "description": "Master library of predefined packages (checklist/cantidad)"
     },
     "/washingPrograms/{programId}": {
       "schema": "WashingProgram",
@@ -118,6 +162,10 @@
     "/admins/{adminId}": {
         "schema": "AdminConfig",
         "description": "System admins control"
+    },
+    "/outOfProgramWashings/{id}": {
+      "schema": "OutOfProgramWashing",
+      "description": "Unscheduled washings done"
     }
   }
 }

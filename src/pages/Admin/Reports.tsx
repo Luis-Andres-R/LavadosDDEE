@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { collection, query, where, getDocs, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { WashingProgram, OperationalReading, TruckOperatingHours, TruckStatusHistory } from '../../types';
-import { FileDown, FileSpreadsheet, Loader2, Calendar, Search, Filter, Home } from 'lucide-react';
+import { WashingProgram, OperationalReading, TruckOperatingHours, TruckStatusHistory, OutOfProgramWashing } from '../../types';
+import { FileDown, FileSpreadsheet, Loader2, Calendar, Search, Filter, Home, AlertOctagon, Truck, Clock, AlertTriangle, BookOpen } from 'lucide-react';
 import { generatePDFReport } from '../../utils/pdfGenerator';
 import { exportToExcel } from '../../utils/excelExporter';
 import { format, startOfWeek, endOfWeek, startOfMonth, startOfYear } from 'date-fns';
@@ -18,27 +18,49 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
     status: 'Todos'
   });
 
-  const handleDownloadPDF = async (type: 'diario' | 'ciclo' | 'mensual' | 'anual' | 'personalizado') => {
+  const [outOfProgramRecords, setOutOfProgramRecords] = useState<OutOfProgramWashing[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'outOfProgramWashings'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OutOfProgramWashing));
+      
+      // Filter by date range
+      data = data.filter(w => w.date >= filters.startDate && w.date <= filters.endDate);
+      
+      // Filter by shift
+      if (filters.shift !== 'Todos') {
+        data = data.filter(w => w.shift === filters.shift);
+      }
+      
+      setOutOfProgramRecords(data);
+    }, (err) => console.error(err));
+    return () => unsubscribe();
+  }, [filters.startDate, filters.endDate, filters.shift]);
+
+  const handleDownloadPDF = async (type: 'diario' | 'turno' | 'mensual') => {
+    if (type === 'turno' && filters.shift === 'Todos') {
+      alert("Por favor seleccione un turno laboral específico (T39 o T44) en los parámetros para generar el reporte de turno.");
+      return;
+    }
+
     setLoading(true);
     try {
       let start = filters.startDate;
       let end = filters.endDate;
 
-      if (type === 'diario') { end = start; }
-      else if (type === 'mensual') {
+      if (type === 'diario' || type === 'turno') { 
+        end = start; 
+      } else if (type === 'mensual') {
           const d = new Date(start);
           start = format(startOfMonth(d), 'yyyy-MM-dd');
           end = format(new Date(d.getFullYear(), d.getMonth() + 1, 0), 'yyyy-MM-dd');
-      } else if (type === 'anual') {
-          const d = new Date(start);
-          start = format(startOfYear(d), 'yyyy-MM-dd');
-          end = format(new Date(d.getFullYear(), 11, 31), 'yyyy-MM-dd');
       }
 
-      const { programs, readings, opHours, statusHistory } = await fetchData(start, end);
+      const { programs, readings, opHours, statusHistory, outOfPrograms } = await fetchData(start, end);
       
-      if (programs.length === 0 && opHours.length === 0 && statusHistory.length === 0) {
-        alert("No existen registros para generar el reporte en el rango seleccionado.");
+      if (programs.length === 0 && opHours.length === 0 && statusHistory.length === 0 && outOfPrograms.length === 0) {
+        alert("No existen registros para generar el reporte en el rango de fechas seleccionado.");
         return;
       }
 
@@ -48,8 +70,10 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
         readings,
         opHours,
         statusHistory,
+        outOfPrograms,
         type,
-        range: { start, end }
+        range: { start, end },
+        selectedShift: type === 'turno' ? filters.shift : 'Todos'
       };
       
       sessionStorage.setItem('currentReportData', JSON.stringify(reportData));
@@ -108,17 +132,27 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
       orderBy('date', 'asc')
     );
 
-    const [snapPrograms, snapReadings, snapOpHours, snapStatusHistory] = await Promise.all([
+    const qOutOfProg = query(
+      collection(db, 'outOfProgramWashings'),
+      where('date', '>=', start),
+      where('date', '<=', end)
+    );
+
+    const [snapPrograms, snapReadings, snapOpHours, snapStatusHistory, snapOutOfProg] = await Promise.all([
         getDocs(qPrograms),
         getDocs(qReadings),
         getDocs(qOpHours),
-        getDocs(qStatusHistory)
+        getDocs(qStatusHistory),
+        getDocs(qOutOfProg)
     ]);
 
     let programs = snapPrograms.docs.map(doc => ({ id: doc.id, ...doc.data() } as WashingProgram));
     let readings = snapReadings.docs.map(doc => ({ id: doc.id, ...doc.data() } as OperationalReading));
     let opHours = snapOpHours.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckOperatingHours));
     let statusHistory = snapStatusHistory.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckStatusHistory));
+    let outOfPrograms = snapOutOfProg.docs.map(doc => ({ id: doc.id, ...doc.data() } as OutOfProgramWashing));
+
+    outOfPrograms.sort((a, b) => a.date.localeCompare(b.date));
 
     // Client side remaining filters
     if (filters.shift !== 'Todos') {
@@ -126,13 +160,14 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
         readings = readings.filter(r => r.shift === filters.shift);
         opHours = opHours.filter(h => h.shift === filters.shift);
         statusHistory = statusHistory.filter(s => s.shift === filters.shift);
+        outOfPrograms = outOfPrograms.filter(o => o.shift === filters.shift);
     }
     
     if (filters.line !== 'Todos') programs = programs.filter(p => p.line === filters.line);
     if (filters.type !== 'Todos') programs = programs.filter(p => p.type === filters.type);
     if (filters.status !== 'Todos') programs = programs.filter(p => p.status === filters.status);
 
-    return { programs, readings, opHours, statusHistory };
+    return { programs, readings, opHours, statusHistory, outOfPrograms };
   };
 
   return (
@@ -236,11 +271,10 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
           <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">Generación Oficial PDF</h3>
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8 border-l-4 border-blue-600 pl-4">Documentación Operativa</p>
           
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <ReportButton label="Reporte Diario" onClick={() => handleDownloadPDF('diario')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
-            <ReportButton label="Resumen de Ciclo" onClick={() => handleDownloadPDF('ciclo')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
-            <ReportButton label="Cierre Mensual" onClick={() => handleDownloadPDF('mensual')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
-            <ReportButton label="Rango Especial" onClick={() => handleDownloadPDF('personalizado')} icon={<FileDown size={18} />} disabled={loading} color="indigo" />
+            <ReportButton label="Reporte por Turno" onClick={() => handleDownloadPDF('turno')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
+            <ReportButton label="Reporte Mensual" onClick={() => handleDownloadPDF('mensual')} icon={<FileDown size={18} />} disabled={loading} color="indigo" />
           </div>
         </div>
 
@@ -264,6 +298,177 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
             DEX: Exportar Sábana de Datos
           </button>
         </div>
+      </div>
+
+      {/* Out of Program Reports Section */}
+      <div className="rounded-[2.5rem] border border-slate-200 bg-white p-10 shadow-sm relative overflow-hidden space-y-8">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50/50 rounded-bl-full flex items-center justify-center">
+          <AlertOctagon size={32} className="text-indigo-100 mt-[-10px] mr-[-10px]" />
+        </div>
+
+        <div>
+          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100 bg-indigo-50 px-3 py-1 rounded-full inline-block mb-3">
+            Módulo de Control Extraordinario
+          </span>
+          <h3 className="text-xl font-black text-slate-900 tracking-tight">Lavados Fuera de Programa</h3>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+            Análisis de cumplimiento y contingencias fuera de agenda
+          </p>
+        </div>
+
+        {/* Big Totalizers */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-3xl border border-slate-150">
+          <div className="text-center md:text-left">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Registros Capturados</span>
+            <span className="text-3xl font-black text-indigo-600 font-mono block mt-1">{outOfProgramRecords.length} Eventos</span>
+            <span className="text-[10px] font-bold text-slate-400 block mt-1">Registrados en terreno por los operadores</span>
+          </div>
+          <div className="text-center md:text-left border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Totalizador de Volumen / Cantidad</span>
+            <span className="text-3xl font-black text-slate-800 font-mono block mt-1">
+              {outOfProgramRecords.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0)} Tramos
+            </span>
+            <span className="text-[10px] font-bold text-slate-400 block mt-1">No interfieren en la adherencia del programa de lavado oficial</span>
+          </div>
+        </div>
+
+        {outOfProgramRecords.length === 0 ? (
+          <div className="text-center py-10 bg-slate-50/30 rounded-3xl border border-dashed border-slate-200">
+            <span className="text-xs font-bold text-slate-400">No se detectaron registros para el rango de fechas seleccionado.</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Breakdown by Truck */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Truck size={14} className="text-slate-400" /> Por Camión Alocado
+              </h4>
+              <div className="space-y-2 font-mono text-xs">
+                {Object.entries(
+                  outOfProgramRecords.reduce((acc, curr) => {
+                    const t = curr.truck || 'Otros';
+                    acc[t] = (acc[t] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([truck, count]) => (
+                  <div key={truck} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <span className="font-bold text-slate-700">{truck}</span>
+                    <span className="font-black bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 text-indigo-600">
+                      {count} {count === 1 ? 'evento' : 'eventos'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Breakdown by Shift */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Clock size={14} className="text-slate-400" /> Por Turno Asignado
+              </h4>
+              <div className="space-y-2 font-mono text-xs">
+                {Object.entries(
+                  outOfProgramRecords.reduce((acc, curr) => {
+                    const s = curr.shift || 'Otros';
+                    acc[s] = (acc[s] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([shift, count]) => (
+                  <div key={shift} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <span className="font-bold text-slate-700">{shift}</span>
+                    <span className="font-black bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 text-indigo-600">
+                      {count} {count === 1 ? 'evento' : 'eventos'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Breakdown by Reason */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2">
+                <AlertTriangle size={14} className="text-slate-400" /> Por Motivos Gatillantes
+              </h4>
+              <div className="space-y-2 text-xs max-h-[180px] overflow-y-auto pr-1">
+                {Object.entries(
+                  outOfProgramRecords.reduce((acc, curr) => {
+                    const r = curr.reason || 'Otro';
+                    acc[r] = (acc[r] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([reason, count]) => (
+                  <div key={reason} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="font-semibold text-slate-600 truncate max-w-[124px]" title={reason}>{reason}</span>
+                    <span className="font-black bg-white px-2 py-0.5 rounded-md border border-slate-200 text-indigo-500 font-mono text-[10px]">
+                      {count} ev.
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Breakdown by Status */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-[0.15em] text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2">
+                <BookOpen size={14} className="text-slate-400" /> Por Estado de Ejecución
+              </h4>
+              <div className="space-y-2 text-xs">
+                {Object.entries(
+                  outOfProgramRecords.reduce((acc, curr) => {
+                    const st = curr.status || 'Realizado';
+                    acc[st] = (acc[st] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([status, count]) => (
+                  <div key={status} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="font-semibold text-slate-600">{status}</span>
+                    <span className={`font-black px-2 py-0.5 rounded-md text-[10px] font-mono ${
+                      status === 'Realizado' ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
+                      status === 'Pendiente' ? 'bg-amber-50 text-amber-600 border border-amber-250' :
+                      'bg-red-50 text-red-600 border border-red-250'
+                    }`}>
+                      {count} ev.
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Observations Feed */}
+        {outOfProgramRecords.filter(w => w.observation && w.observation.trim()).length > 0 && (
+          <div className="space-y-4 pt-4 border-t border-slate-100">
+            <h4 className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">
+              Observaciones de Terreno Recientes
+            </h4>
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-2">
+              {outOfProgramRecords
+                .filter(w => w.observation && w.observation.trim())
+                .slice(0, 10)
+                .map((washing, idx) => (
+                  <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between gap-2.5">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                        {washing.date} &bull; {washing.truck} ({washing.shift}) &bull; {washing.areaLocation}
+                      </span>
+                      <p className="text-xs font-bold text-slate-700 italic">
+                        "{washing.observation}"
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span className="block text-[10px] text-indigo-600 font-bold uppercase tracking-wider">
+                        {washing.reason}
+                      </span>
+                      <span className="block text-[9px] text-slate-400 mt-1">
+                        Por {washing.createdBy || 'Operador'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
