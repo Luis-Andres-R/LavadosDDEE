@@ -90,6 +90,7 @@ export default function OperatorDashboard() {
   const [checklistProgram, setChecklistProgram] = useState<WashingProgram | null>(null);
   const [checklistTruck, setChecklistTruck] = useState('');
   const [checklistItems, setChecklistItems] = useState<any[]>([]);
+  const [checklistObservation, setChecklistObservation] = useState('');
 
   // Fuera de programa states
   const [showOutOfProgramForm, setShowOutOfProgramForm] = useState(false);
@@ -364,11 +365,13 @@ export default function OperatorDashboard() {
   };
 
   // Open the Checklist runner
+  const [loadingChecklist, setLoadingChecklist] = useState(false); // keep standard states clean if any
   const handleOpenChecklist = (program: WashingProgram) => {
     setChecklistProgram(program);
     setChecklistTruck(program.truck || '');
     // Prep list copies with default states or previously set completions
     setChecklistItems(program.items ? [...program.items] : []);
+    setChecklistObservation(program.observation || '');
   };
 
   const handleToggleChecklistItem = (index: number) => {
@@ -429,6 +432,13 @@ export default function OperatorDashboard() {
         status = 'Parcial';
       }
 
+      if (completedCount < totalCount) {
+        if (!checklistObservation.trim()) {
+          alert("El checklist está incompleto. Debe ingresar una observación general obligatoria explicando el motivo (ej. sin acceso, falta de tiempo, camión no disponible, etc.).");
+          return;
+        }
+      }
+
       const opEmail = profile?.email || auth.currentUser?.email || '';
       const curDate = format(new Date(), 'yyyy-MM-dd');
       const curShift = profile?.assignedShift || 'T39';
@@ -440,6 +450,7 @@ export default function OperatorDashboard() {
         pendingCount,
         percentage,
         status,
+        observation: checklistObservation,
         updatedAt: serverTimestamp(),
         lastUpdatedBy: opEmail
       };
@@ -456,7 +467,7 @@ export default function OperatorDashboard() {
         registeredAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         programmedQuantity: totalCount,
-        observation: `Checklist cerrado con ${completedCount}/${totalCount} completado`
+        observation: checklistObservation || `Checklist cerrado con ${completedCount}/${totalCount} completado`
       };
 
       await addDoc(collection(db, 'washingRecords'), recordData);
@@ -955,6 +966,48 @@ export default function OperatorDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Checklist Observation Area */}
+            <div className="px-8 py-4 border-t border-slate-100 bg-slate-50/20 space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  Observación General 
+                  {checklistItems.filter(it => it.done).length < checklistItems.length && (
+                    <span className="text-rose-500 font-extrabold ml-1">(Obligatorio - Incompleto)</span>
+                  )}
+                </label>
+                <textarea
+                  rows={2}
+                  value={checklistObservation}
+                  onChange={(e) => setChecklistObservation(e.target.value)}
+                  placeholder="Explicar motivos: sin acceso, falta de tiempo, camión no disponible, etc."
+                  className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 outline-hidden focus:border-emerald-500 transition-all placeholder:text-slate-300 resize-none"
+                />
+              </div>
+
+              {/* Suggestions */}
+              <div className="space-y-1">
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Sugerencias rápidas:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Sin acceso',
+                    'Falta de tiempo',
+                    'Camión no disponible',
+                    'Prioridad operacional',
+                    'Continuidad al día siguiente'
+                  ].map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setChecklistObservation(sug)}
+                      className="text-[9px] font-extrabold bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 text-slate-500 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Checklist summary footer */}

@@ -146,47 +146,50 @@ export const generatePDFReport = async (
     finalTruckSummary[truck] = { expected: 0, operational: 0, deducted: 0, reasons: [] };
   });
 
-  // Extract all unique dates evaluated in the report range from any records
-  const uniqueDates = new Set<string>();
-  data.forEach(p => uniqueDates.add(p.date));
-  statusHistory.forEach(h => uniqueDates.add(h.date));
-  opHours.forEach(o => uniqueDates.add(o.date));
+  const getDatesInRange = (startStr: string, endStr: string) => {
+    const dates: string[] = [];
+    try {
+      const current = new Date(startStr + 'T12:00:00');
+      const end = new Date(endStr + 'T12:00:00');
+      while (current <= end) {
+        dates.push(format(current, 'yyyy-MM-dd'));
+        current.setDate(current.getDate() + 1);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    if (dates.length === 0) {
+      dates.push(startStr);
+    }
+    return dates;
+  };
 
-  if (uniqueDates.size === 0) {
-    uniqueDates.add(range.start);
-  }
-
-  // "El lavado solo se realiza en turno día. No existe operación nocturna de lavado."
-  // Only check shift 'T39' (Day Shift). 12 Operational hours base.
-  const shift = 'T39';
+  const uniqueDates = getDatesInRange(range.start, range.end);
 
   uniqueDates.forEach(date => {
     validTrucks.forEach(truck => {
-      finalTruckSummary[truck].expected += 12; // Base 12 hours for day shift
+      finalTruckSummary[truck].expected += 24; // Each calendar day counts as 24 expected hours
 
-      // Check if status is "En servicio" during this day's shift
-      const statusRecord = statusHistory.find(h => h.date === date && h.shift === shift);
-      const truckStatus = statusRecord?.trucks.find(t => t.code === truck)?.status;
+      // Check if status is "Fuera de servicio" during this day
+      const statusRecord = statusHistory.find(h => h.date === date && h.shift === 'T39') || statusHistory.find(h => h.date === date);
+      const truckStatus = statusRecord?.trucks?.find(t => t.code === truck)?.status;
 
-      if (truckStatus === 'En servicio') {
-        const failure = opHours.find(h => h.date === date && h.shift === shift && h.truck === truck);
-        
-        if (failure) {
-          finalTruckSummary[truck].operational += failure.operationalHours;
-          finalTruckSummary[truck].deducted += failure.deductedHours;
-          if (failure.reason && !finalTruckSummary[truck].reasons.includes(failure.reason)) {
-            finalTruckSummary[truck].reasons.push(failure.reason);
-          }
-        } else {
-          finalTruckSummary[truck].operational += 12;
-        }
-      } else {
-        // Not "En servicio" -> 0 operational hours, 12 deducted hours passed
-        finalTruckSummary[truck].deducted += 12;
-        
-        const label = truckStatus ? `Estado: ${truckStatus}` : 'Sin registro de estado';
+      if (truckStatus === 'Fuera de servicio') {
+        // Fuera de servicio -> 0 operational hours, 24 deducted hours
+        finalTruckSummary[truck].deducted += 24;
+        const label = 'Fuera de servicio';
         if (!finalTruckSummary[truck].reasons.includes(label)) {
           finalTruckSummary[truck].reasons.push(label);
+        }
+      } else {
+        // Operativo (En servicio, Disponible, or empty status / default) -> 24 operational hours, 0 deducted
+        finalTruckSummary[truck].operational += 24;
+        // Optionally grab failure reason if any was registered in operating hours log
+        const failure = opHours.find(h => h.date === date && h.truck === truck);
+        if (failure && failure.reason) {
+          if (!finalTruckSummary[truck].reasons.includes(failure.reason)) {
+            finalTruckSummary[truck].reasons.push(failure.reason);
+          }
         }
       }
     });
@@ -295,20 +298,25 @@ export const generatePDFReport = async (
     doc.setFontSize(14);
     doc.text('Registro de Temperaturas y Conductividad', 15, finalY);
     
-    const readingsTable = readings.map(r => [
-      r.date, r.shift, r.truck,
-      `${r.readings.TKA.us} / ${r.readings.TKA.temperature} / ${r.readings.TKA.level}%`,
-      `${r.readings.TKC.us} / ${r.readings.TKC.temperature} / ${r.readings.TKC.level}%`,
-      `${r.readings.TKD.us} / ${r.readings.TKD.temperature} / ${r.readings.TKD.level}%`,
-      `${r.readings.potableWater.us} / ${r.readings.potableWater.temperature} / ${r.readings.potableWater.level}%`
-    ]);
+    const readingsTable = readings.map(r => {
+      const tkeReading = r.readings.TKE || r.readings.TKD || { us: 0, temperature: 0, level: 0 };
+      const truckTankStr = r.readings.truckTank && r.readings.truckTank.us ? `${r.readings.truckTank.us} / ${r.readings.truckTank.temperature} / ${r.readings.truckTank.level}%` : '-';
+      return [
+        r.date, r.shift, r.truck,
+        `${r.readings.TKA.us} / ${r.readings.TKA.temperature} / ${r.readings.TKA.level}%`,
+        `${r.readings.TKC.us} / ${r.readings.TKC.temperature} / ${r.readings.TKC.level}%`,
+        `${tkeReading.us} / ${tkeReading.temperature} / ${tkeReading.level}%`,
+        `${r.readings.potableWater.us} / ${r.readings.potableWater.temperature} / ${r.readings.potableWater.level}%`,
+        truckTankStr
+      ];
+    });
 
     doc.autoTable({
       startY: finalY + 8,
-      head: [['Fecha', 'Turno', 'Camión', 'TKA (uS/T/%)', 'TKC (uS/T/%)', 'TKD (uS/T/%)', 'Potable (uS/T/%)']],
+      head: [['Fecha', 'Turno', 'Camión', 'TKA (uS/T/%)', 'TKC (uS/T/%)', 'TKE (uS/T/%)', 'Potable (uS/T/%)', 'Est. Camión (uS/T/%)']],
       body: readingsTable,
       headStyles: { fillColor: [51, 65, 85] },
-      styles: { fontSize: 6.5, cellPadding: 2 }
+      styles: { fontSize: 6, cellPadding: 1.5 }
     });
   }
 

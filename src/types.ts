@@ -102,6 +102,7 @@ export interface WashingProgram {
   notPerformedDetectedAt?: string;
   notPerformedDetail?: string;
   lastUpdatedBy?: string;
+  observation?: string;
 }
 
 export interface WashingRecord {
@@ -150,8 +151,10 @@ export interface OperationalReading {
   readings: {
     TKA: TankReading;
     TKC: TankReading;
-    TKD: TankReading;
+    TKD?: TankReading;
+    TKE?: TankReading;
     potableWater: TankReading;
+    truckTank?: TankReading;
   };
   createdAt: any;
   updatedAt: any;

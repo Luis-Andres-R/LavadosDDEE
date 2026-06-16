@@ -19,8 +19,9 @@ export default function ReadingsForm() {
     readings: {
       TKA: { us: '', temperature: '', level: '' },
       TKC: { us: '', temperature: '', level: '' },
-      TKD: { us: '', temperature: '', level: '' },
-      potableWater: { us: '', temperature: '', level: '' }
+      TKE: { us: '', temperature: '', level: '' },
+      potableWater: { us: '', temperature: '', level: '' },
+      truckTank: { us: '', temperature: '', level: '' }
     }
   });
 
@@ -67,9 +68,12 @@ export default function ReadingsForm() {
         };
       });
 
+      // Keep TKD for old records compatibility
+      parsedReadings['TKD'] = parsedReadings['TKE'];
+
       const data: Omit<OperationalReading, 'id'> = {
         ...formData,
-        readings: parsedReadings,
+        readings: parsedReadings as any,
         operatorEmail: profile?.email || auth.currentUser?.email || 'unknown',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -84,8 +88,9 @@ export default function ReadingsForm() {
         readings: {
           TKA: { us: '', temperature: '', level: '' },
           TKC: { us: '', temperature: '', level: '' },
-          TKD: { us: '', temperature: '', level: '' },
-          potableWater: { us: '', temperature: '', level: '' }
+          TKE: { us: '', temperature: '', level: '' },
+          potableWater: { us: '', temperature: '', level: '' },
+          truckTank: { us: '', temperature: '', level: '' }
         }
       }));
       setTimeout(() => setSuccess(false), 3000);
@@ -154,8 +159,16 @@ export default function ReadingsForm() {
         {/* Estanques */}
         <TankSection title="Estanque TKA" id="TKA" value={formData.readings.TKA} onChange={handleInputChange} />
         <TankSection title="Estanque TKC" id="TKC" value={formData.readings.TKC} onChange={handleInputChange} />
-        <TankSection title="Estanque TKD" id="TKD" value={formData.readings.TKD} onChange={handleInputChange} />
+        <TankSection title="Estanque TKE" id="TKE" value={formData.readings.TKE} onChange={handleInputChange} />
         <TankSection title="Agua Potable" id="potableWater" value={formData.readings.potableWater} onChange={handleInputChange} isPotable />
+        {formData.truck && (
+          <TankSection 
+            title={`Estanque del Camión (${formData.truck})`} 
+            id="truckTank" 
+            value={formData.readings.truckTank} 
+            onChange={handleInputChange} 
+          />
+        )}
 
         <button 
           type="submit"

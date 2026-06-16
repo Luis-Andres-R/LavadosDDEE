@@ -38,23 +38,14 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
     return () => unsubscribe();
   }, [filters.startDate, filters.endDate, filters.shift]);
 
-  const handleDownloadPDF = async (type: 'diario' | 'turno' | 'mensual') => {
-    if (type === 'turno' && filters.shift === 'Todos') {
-      alert("Por favor seleccione un turno laboral específico (T39 o T44) en los parámetros para generar el reporte de turno.");
-      return;
-    }
-
+  const handleDownloadPDF = async (type: 'diario' | 'rango') => {
     setLoading(true);
     try {
       let start = filters.startDate;
       let end = filters.endDate;
 
-      if (type === 'diario' || type === 'turno') { 
+      if (type === 'diario') { 
         end = start; 
-      } else if (type === 'mensual') {
-          const d = new Date(start);
-          start = format(startOfMonth(d), 'yyyy-MM-dd');
-          end = format(new Date(d.getFullYear(), d.getMonth() + 1, 0), 'yyyy-MM-dd');
       }
 
       const { programs, readings, opHours, statusHistory, outOfPrograms } = await fetchData(start, end);
@@ -73,7 +64,7 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
         outOfPrograms,
         type,
         range: { start, end },
-        selectedShift: type === 'turno' ? filters.shift : 'Todos'
+        selectedShift: filters.shift
       };
       
       sessionStorage.setItem('currentReportData', JSON.stringify(reportData));
@@ -271,10 +262,9 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
           <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">Generación Oficial PDF</h3>
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8 border-l-4 border-blue-600 pl-4">Documentación Operativa</p>
           
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ReportButton label="Reporte Diario" onClick={() => handleDownloadPDF('diario')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
-            <ReportButton label="Reporte por Turno" onClick={() => handleDownloadPDF('turno')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
-            <ReportButton label="Reporte Mensual" onClick={() => handleDownloadPDF('mensual')} icon={<FileDown size={18} />} disabled={loading} color="indigo" />
+            <ReportButton label="Reporte por Rango" onClick={() => handleDownloadPDF('rango')} icon={<FileDown size={18} />} disabled={loading} color="indigo" />
           </div>
         </div>
 

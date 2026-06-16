@@ -50,17 +50,23 @@ export default function OperationalReadings() {
       'Fecha', 'Turno', 'Operador', 'Camion',
       'TKA uS', 'TKA T', 'TKA Nivel',
       'TKC uS', 'TKC T', 'TKC Nivel',
-      'TKD uS', 'TKD T', 'TKD Nivel',
-      'Potable uS', 'Potable T', 'Potable Nivel'
+      'TKE uS', 'TKE T', 'TKE Nivel',
+      'Potable uS', 'Potable T', 'Potable Nivel',
+      'Camion uS', 'Camion T', 'Camion Nivel'
     ];
 
-    const rows = filteredReadings.map(r => [
-      r.date, r.shift, r.washingOperator, r.truck,
-      r.readings.TKA.us, r.readings.TKA.temperature, r.readings.TKA.level,
-      r.readings.TKC.us, r.readings.TKC.temperature, r.readings.TKC.level,
-      r.readings.TKD.us, r.readings.TKD.temperature, r.readings.TKD.level,
-      r.readings.potableWater.us, r.readings.potableWater.temperature, r.readings.potableWater.level
-    ]);
+    const rows = filteredReadings.map(r => {
+      const tkeReading = r.readings.TKE || r.readings.TKD || { us: 0, temperature: 0, level: 0 };
+      const truckTankReading = r.readings.truckTank || { us: '', temperature: '', level: '' };
+      return [
+        r.date, r.shift, r.washingOperator, r.truck,
+        r.readings.TKA.us, r.readings.TKA.temperature, r.readings.TKA.level,
+        r.readings.TKC.us, r.readings.TKC.temperature, r.readings.TKC.level,
+        tkeReading.us, tkeReading.temperature, tkeReading.level,
+        r.readings.potableWater.us, r.readings.potableWater.temperature, r.readings.potableWater.level,
+        truckTankReading.us || '-', truckTankReading.temperature || '-', truckTankReading.level || '-'
+      ];
+    });
 
     const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -160,44 +166,51 @@ export default function OperationalReadings() {
                 <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">Operador / Camión</th>
                 <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 bg-slate-800/50">TKA (uS-T-%)</th>
                 <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 bg-slate-800/60">TKC (uS-T-%)</th>
-                <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 bg-slate-800/50">TKD (uS-T-%)</th>
+                <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 bg-slate-800/50">TKE (uS-T-%)</th>
                 <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 bg-slate-800/60">Agua Pot. (uS-T-%)</th>
+                <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 bg-slate-800/50">Camión (uS-T-%)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">Cargando datos...</td>
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">Cargando datos...</td>
                 </tr>
               ) : filteredReadings.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">No hay lecturas registradas</td>
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">No hay lecturas registradas</td>
                 </tr>
               ) : (
-                filteredReadings.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-6">
-                      <p className="text-sm font-black text-slate-900">{format(new Date(r.date + 'T12:00:00'), 'dd MMM, yy', { locale: es })}</p>
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{r.shift}</p>
-                    </td>
-                    <td className="px-6 py-6">
-                        <p className="text-xs font-bold text-slate-700">{r.washingOperator}</p>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{r.truck}</p>
-                    </td>
-                    <td className="px-6 py-6 bg-slate-50/30">
-                        <ReadingBadge reading={r.readings.TKA} />
-                    </td>
-                    <td className="px-6 py-6 bg-slate-50/60">
-                         <ReadingBadge reading={r.readings.TKC} />
-                    </td>
-                    <td className="px-6 py-6 bg-slate-50/30">
-                         <ReadingBadge reading={r.readings.TKD} />
-                    </td>
-                    <td className="px-6 py-6 bg-slate-50/60">
-                         <ReadingBadge reading={r.readings.potableWater} />
-                    </td>
-                  </tr>
-                ))
+                filteredReadings.map((r) => {
+                  const tkeReading = r.readings.TKE || r.readings.TKD;
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-6">
+                        <p className="text-sm font-black text-slate-900">{format(new Date(r.date + 'T12:00:00'), 'dd MMM, yy', { locale: es })}</p>
+                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{r.shift}</p>
+                      </td>
+                      <td className="px-6 py-6">
+                          <p className="text-xs font-bold text-slate-700">{r.washingOperator}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{r.truck}</p>
+                      </td>
+                      <td className="px-6 py-6 bg-slate-50/30">
+                          <ReadingBadge reading={r.readings.TKA} />
+                      </td>
+                      <td className="px-6 py-6 bg-slate-50/60">
+                           <ReadingBadge reading={r.readings.TKC} />
+                      </td>
+                      <td className="px-6 py-6 bg-slate-50/30">
+                           <ReadingBadge reading={tkeReading} />
+                      </td>
+                      <td className="px-6 py-6 bg-slate-50/60">
+                           <ReadingBadge reading={r.readings.potableWater} />
+                      </td>
+                      <td className="px-6 py-6 bg-slate-50/30">
+                           <ReadingBadge reading={r.readings.truckTank} isTruck />
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -207,9 +220,12 @@ export default function OperationalReadings() {
   );
 }
 
-function ReadingBadge({ reading }: { reading: any }) {
+function ReadingBadge({ reading, isTruck = false }: { reading: any, isTruck?: boolean }) {
+    if (!reading || reading.us === '' || reading.us === undefined) {
+        return <span className="text-[10px] text-slate-400/80 font-mono font-bold italic">{isTruck ? 'Sin Camión' : 'S/R'}</span>;
+    }
     return (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 font-mono">
             <div className="flex items-center justify-between gap-4">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">uS:</span>
                 <span className="text-[11px] font-black text-slate-900">{reading.us}</span>

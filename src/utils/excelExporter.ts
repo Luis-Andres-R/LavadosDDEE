@@ -30,24 +30,31 @@ export const exportToExcel = (
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Lavados');
 
   if (readings.length > 0) {
-    const readingsData = readings.map(r => ({
-      Fecha: r.date,
-      Turno: r.shift,
-      Operador: r.washingOperator,
-      Camion: r.truck,
-      TKA_uS: r.readings.TKA.us,
-      TKA_Temp: r.readings.TKA.temperature,
-      TKA_Nivel: r.readings.TKA.level,
-      TKC_uS: r.readings.TKC.us,
-      TKC_Temp: r.readings.TKC.temperature,
-      TKC_Nivel: r.readings.TKC.level,
-      TKD_uS: r.readings.TKD.us,
-      TKD_Temp: r.readings.TKD.temperature,
-      TKD_Nivel: r.readings.TKD.level,
-      Potable_uS: r.readings.potableWater.us,
-      Potable_Temp: r.readings.potableWater.temperature,
-      Potable_Nivel: r.readings.potableWater.level
-    }));
+    const readingsData = readings.map(r => {
+      const tkeReading = r.readings.TKE || r.readings.TKD || { us: 0, temperature: 0, level: 0 };
+      const truckTankReading = r.readings.truckTank || { us: '', temperature: '', level: '' };
+      return {
+        Fecha: r.date,
+        Turno: r.shift,
+        Operador: r.washingOperator,
+        Camion: r.truck,
+        TKA_uS: r.readings.TKA.us,
+        TKA_Temp: r.readings.TKA.temperature,
+        TKA_Nivel: r.readings.TKA.level,
+        TKC_uS: r.readings.TKC.us,
+        TKC_Temp: r.readings.TKC.temperature,
+        TKC_Nivel: r.readings.TKC.level,
+        TKE_uS: tkeReading.us,
+        TKE_Temp: tkeReading.temperature,
+        TKE_Nivel: tkeReading.level,
+        Potable_uS: r.readings.potableWater.us,
+        Potable_Temp: r.readings.potableWater.temperature,
+        Potable_Nivel: r.readings.potableWater.level,
+        Camion_uS: truckTankReading.us,
+        Camion_Temp: truckTankReading.temperature,
+        Camion_Nivel: truckTankReading.level
+      };
+    });
     const readingsSheet = XLSX.utils.json_to_sheet(readingsData);
     XLSX.utils.book_append_sheet(workbook, readingsSheet, 'Lecturas Operacionales');
   }
