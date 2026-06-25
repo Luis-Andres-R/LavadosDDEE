@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { WashingProgram, OperationalReading, TruckOperatingHours, SHIFT_CONFIG, TruckStatusHistory, INITIAL_TRUCKS } from '../types';
+import { WashingProgram, OperationalReading, TruckOperatingHours, SHIFT_CONFIG, TruckStatusHistory, INITIAL_TRUCKS, OutOfProgramWashing } from '../types';
 import { format, differenceInDays, parseISO } from 'date-fns';
 
 declare module 'jspdf' {
@@ -9,32 +9,75 @@ declare module 'jspdf' {
   }
 }
 
+const loadLogoImage = (url: string): Promise<HTMLImageElement | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+};
+
 export const generatePDFReport = async (
   data: WashingProgram[], 
   type: string, 
   range: { start: string, end: string }, 
   readings: OperationalReading[] = [],
   opHours: TruckOperatingHours[] = [],
-  statusHistory: TruckStatusHistory[] = []
+  statusHistory: TruckStatusHistory[] = [],
+  outOfPrograms: OutOfProgramWashing[] = []
 ) => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  // Header
-  doc.setFillColor(37, 99, 235); // Blue 600
-  doc.rect(0, 10, pageWidth, 25, 'F');
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.text('PROGRAMA DE LAVADOS SQM', 15, 24);
-  
-  doc.setFontSize(9);
-  doc.text('Control de Lavados DDEE', 15, 30);
-  
+  // Load SQM logo dynamically
+  const logoImg = await loadLogoImage('/logo-sqm.png');
+
+  // Header - Clean Executive Design
+  if (logoImg) {
+    doc.addImage(logoImg, 'PNG', 15, 10, 12, 12);
+  }
+
+  // Vertical Divider Line next to the logo
+  doc.setDrawColor(226, 232, 240); // Slate 200
+  doc.setLineWidth(0.5);
+  doc.line(31, 10, 31, 23);
+
+  // Left Title and Subtitle Block in clean Title Case
+  doc.setTextColor(15, 23, 42); // Slate 900
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Programa de Lavados SQM', 34, 14);
+
+  doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`TIPO: ${type.toUpperCase()}`, pageWidth - 15, 18, { align: 'right' });
-  doc.text(`PERIODO: ${range.start} AL ${range.end}`, pageWidth - 15, 23, { align: 'right' });
-  doc.text(`GENERADO: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth - 15, 28, { align: 'right' });
+  doc.setTextColor(100, 116, 139); // Slate 500
+  doc.text('Control de Lavados DDEE', 34, 18);
+
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184); // Slate 400
+  doc.text('Reporte de Gestión y Eficiencia Operativa', 34, 21.5);
+
+  // Right Side Metadata
+  doc.setTextColor(148, 163, 184); // Slate 400
+  doc.setFontSize(7);
+  doc.text('GENERADO EL', pageWidth - 15, 12, { align: 'right' });
+  doc.setTextColor(71, 85, 105); // Slate 600
+  doc.setFontSize(8);
+  doc.text(format(new Date(), 'dd/MM/yyyy HH:mm'), pageWidth - 15, 15.5, { align: 'right' });
+
+  doc.setTextColor(148, 163, 184); // Slate 400
+  doc.setFontSize(7);
+  doc.text('PERIODO', pageWidth - 15, 19.5, { align: 'right' });
+  doc.setTextColor(71, 85, 105); // Slate 600
+  doc.setFontSize(8);
+  doc.text(`${range.start} AL ${range.end}`, pageWidth - 15, 23, { align: 'right' });
+
+  // Elegant Underline dividing Header from Content
+  doc.setDrawColor(226, 232, 240); // Slate 200
+  doc.setLineWidth(0.5);
+  doc.line(15, 27, pageWidth - 15, 27);
 
   // Helper to calculate structures/equipments for a WashingProgram based on checklist/cantidad
   const getProgramStructures = (p: WashingProgram) => {
@@ -138,9 +181,22 @@ export const generatePDFReport = async (
   doc.setFontSize(14);
   doc.text('Resumen de Horas Operativas por Camión', 15, currentY);
 
-  // Group operational hours specifically for CM95, CM97, CM10, CM49. CM58 excluded.
+  // Group operational hours specifically for CM95, CM97 and REEMPLAZOs (12 hours per day, 07:00-19:00)
   const finalTruckSummary: Record<string, { expected: number, operational: number, deducted: number, reasons: string[] }> = {};
-  const validTrucks = ['CM95', 'CM97', 'CM10', 'CM49'];
+  
+  const replacementTags = new Set<string>();
+  data.forEach(p => {
+    if (p.truck === 'REEMPLAZO' && p.replacementTruckTag) {
+      replacementTags.add(p.replacementTruckTag.toUpperCase());
+    }
+  });
+  outOfPrograms.forEach(w => {
+    if (w.truck === 'REEMPLAZO' && w.replacementTruckTag) {
+      replacementTags.add(w.replacementTruckTag.toUpperCase());
+    }
+  });
+
+  const validTrucks = ['CM95', 'CM97', ...Array.from(replacementTags)];
   
   validTrucks.forEach(truck => {
     finalTruckSummary[truck] = { expected: 0, operational: 0, deducted: 0, reasons: [] };
@@ -168,41 +224,76 @@ export const generatePDFReport = async (
 
   uniqueDates.forEach(date => {
     validTrucks.forEach(truck => {
-      finalTruckSummary[truck].expected += 24; // Each calendar day counts as 24 expected hours
+      let dayExpected = 12;
+      let dayDeducted = 0;
+      let dayOperational = 12;
 
-      // Check if status is "Fuera de servicio" during this day
-      const statusRecord = statusHistory.find(h => h.date === date && h.shift === 'T39') || statusHistory.find(h => h.date === date);
-      const truckStatus = statusRecord?.trucks?.find(t => t.code === truck)?.status;
+      if (truck === 'CM95' || truck === 'CM97') {
+        // Check if status is "Fuera de servicio" during this day
+        const statusRecord = statusHistory.find(h => h.date === date && h.shift === 'T39') || statusHistory.find(h => h.date === date);
+        const truckStatus = statusRecord?.trucks?.find(t => t.code === truck)?.status;
 
-      if (truckStatus === 'Fuera de servicio') {
-        // Fuera de servicio -> 0 operational hours, 24 deducted hours
-        finalTruckSummary[truck].deducted += 24;
-        const label = 'Fuera de servicio';
-        if (!finalTruckSummary[truck].reasons.includes(label)) {
-          finalTruckSummary[truck].reasons.push(label);
-        }
-      } else {
-        // Operativo (En servicio, Disponible, or empty status / default) -> 24 operational hours, 0 deducted
-        finalTruckSummary[truck].operational += 24;
-        // Optionally grab failure reason if any was registered in operating hours log
-        const failure = opHours.find(h => h.date === date && h.truck === truck);
-        if (failure && failure.reason) {
-          if (!finalTruckSummary[truck].reasons.includes(failure.reason)) {
-            finalTruckSummary[truck].reasons.push(failure.reason);
+        if (truckStatus === 'Fuera de servicio') {
+          dayExpected = 12;
+          dayDeducted = 12;
+          dayOperational = 0;
+          const label = 'Fuera de servicio';
+          if (!finalTruckSummary[truck].reasons.includes(label)) {
+            finalTruckSummary[truck].reasons.push(label);
+          }
+        } else {
+          // Check if there are failure hours logged in operatingHours
+          const failure = opHours.find(h => h.date === date && h.truck === truck);
+          if (failure) {
+            dayDeducted = Number(failure.deductedHours) || 0;
+            dayOperational = Math.max(0, 12 - dayDeducted);
+            if (failure.reason && !finalTruckSummary[truck].reasons.includes(failure.reason)) {
+              finalTruckSummary[truck].reasons.push(failure.reason);
+            }
           }
         }
+      } else {
+        // It's a REEMPLAZO truck!
+        // We check if it is active/registered as in service on this date.
+        const hasActiveWork = data.some(p => p.date === date && p.truck === 'REEMPLAZO' && p.replacementTruckTag?.toUpperCase() === truck && p.status !== 'No realizado') ||
+                             outOfPrograms.some(w => w.date === date && w.truck === 'REEMPLAZO' && w.replacementTruckTag?.toUpperCase() === truck && w.status !== 'No realizado');
+
+        if (hasActiveWork) {
+          dayExpected = 12;
+          const failure = opHours.find(h => h.date === date && (h.truck === truck || h.replacementTruckTag?.toUpperCase() === truck));
+          if (failure) {
+            dayDeducted = Number(failure.deductedHours) || 0;
+            dayOperational = Math.max(0, 12 - dayDeducted);
+            if (failure.reason && !finalTruckSummary[truck].reasons.includes(failure.reason)) {
+              finalTruckSummary[truck].reasons.push(failure.reason);
+            }
+          } else {
+            dayOperational = 12;
+            dayDeducted = 0;
+          }
+        } else {
+          dayExpected = 0;
+          dayOperational = 0;
+          dayDeducted = 0;
+        }
       }
+
+      finalTruckSummary[truck].expected += dayExpected;
+      finalTruckSummary[truck].operational += dayOperational;
+      finalTruckSummary[truck].deducted += dayDeducted;
     });
   });
 
-  const opHoursTable = Object.entries(finalTruckSummary).map(([truck, stats]) => [
-    truck,
-    stats.expected.toFixed(1),
-    stats.operational.toFixed(1),
-    stats.deducted.toFixed(1),
-    `${stats.expected > 0 ? ((stats.operational / stats.expected) * 100).toFixed(1) : '100.0'}%`,
-    stats.reasons.join(', ') || 'Sin Novedad'
-  ]);
+  const opHoursTable = Object.entries(finalTruckSummary)
+    .filter(([_, stats]) => stats.expected > 0)
+    .map(([truck, stats]) => [
+      truck,
+      stats.expected.toFixed(1),
+      stats.operational.toFixed(1),
+      stats.deducted.toFixed(1),
+      `${stats.expected > 0 ? ((stats.operational / stats.expected) * 100).toFixed(1) : '100.0'}%`,
+      stats.reasons.join(', ') || 'Sin Novedad'
+    ]);
 
   doc.autoTable({
     startY: currentY + 8,

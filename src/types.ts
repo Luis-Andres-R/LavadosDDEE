@@ -41,7 +41,7 @@ export interface TruckInfo {
   updatedBy: string;
 }
 
-export const INITIAL_TRUCKS = ['CM95', 'CM97', 'CM10', 'CM49'];
+export const INITIAL_TRUCKS = ['CM95', 'CM97'];
 export const WASHING_TRUCKS = ['CM95', 'CM97'];
 
 export type ProgramStatus = 'Pendiente' | 'Completo' | 'Parcial' | 'No realizado' | 'Cerrado';
@@ -103,6 +103,10 @@ export interface WashingProgram {
   notPerformedDetail?: string;
   lastUpdatedBy?: string;
   observation?: string;
+  
+  // Reemplazo fields
+  replacementTruckTag?: string;
+  displayTruckName?: string;
 }
 
 export interface WashingRecord {
@@ -192,6 +196,8 @@ export interface TruckOperatingHours {
   detail: string;
   createdAt: any;
   updatedAt: any;
+  replacementTruckTag?: string;
+  displayTruckName?: string;
 }
 
 export interface TruckStatusHistory {
@@ -223,6 +229,8 @@ export interface OutOfProgramWashing {
   assignedBy?: string;
   assignedAt?: any;
   completedAt?: any;
+  replacementTruckTag?: string;
+  displayTruckName?: string;
 }
 
 export const OUT_OF_PROGRAM_REASONS = [

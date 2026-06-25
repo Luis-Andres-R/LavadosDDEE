@@ -75,6 +75,7 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
     shift: 'T39' as ShiftType,
     washingOperator: WASHING_OPERATORS[0],
     truck: WASHING_TRUCKS[0],
+    replacementTruckTag: '',
     adminObservation: ''
   });
 
@@ -144,6 +145,10 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
       alert("Debe seleccionar al menos un paquete para programar.");
       return;
     }
+    if (formData.truck === 'REEMPLAZO' && !formData.replacementTruckTag.trim()) {
+      alert("Por favor ingrese el tag del camión de reemplazo.");
+      return;
+    }
 
     setLoading(true);
 
@@ -192,6 +197,12 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
           pendingCount: programmedQty,
           percentage: 0
         };
+
+        if (formData.truck === 'REEMPLAZO') {
+          payload.truckId = 'REEMPLAZO';
+          payload.replacementTruckTag = formData.replacementTruckTag.trim().toUpperCase();
+          payload.displayTruckName = `${formData.replacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+        }
 
         if (pkgTemplate.controlType === 'cantidad') {
           payload.quantity = pkgTemplate.quantity || 1;
@@ -392,12 +403,27 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 transition-all font-mono"
                 >
                   <option value="" disabled>Seleccionar camión...</option>
-                  {WASHING_TRUCKS.map(code => (
+                  {['CM95', 'CM97', 'REEMPLAZO'].map(code => (
                     <option key={code} value={code}>{code}</option>
                   ))}
                 </select>
               </div>
             </div>
+
+            {/* Replacement Truck Tag */}
+            {formData.truck === 'REEMPLAZO' && (
+              <div className="sm:col-span-2 space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 ml-1">Tag del camión de reemplazo *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.replacementTruckTag}
+                  onChange={e => setFormData(p => ({ ...p, replacementTruckTag: e.target.value.toUpperCase() }))}
+                  placeholder="Ej. CM102, ALJIBE-07, etc..."
+                  className="w-full rounded-2xl border border-amber-300 bg-amber-50/20 py-3 px-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-amber-500 transition-all font-mono uppercase"
+                />
+              </div>
+            )}
 
             {/* Admin Observations */}
             <div className="sm:col-span-2 space-y-2">

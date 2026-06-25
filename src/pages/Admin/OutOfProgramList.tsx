@@ -38,6 +38,7 @@ export default function OutOfProgramList() {
     date: format(new Date(), 'yyyy-MM-dd'),
     shift: 'T39' as ShiftType,
     truck: 'CM95',
+    replacementTruckTag: '',
     areaLocation: '',
     description: '',
     reason: 'Punto caliente',
@@ -53,6 +54,10 @@ export default function OutOfProgramList() {
     e.preventDefault();
     if (!formData.areaLocation.trim() || !formData.description.trim() || !formData.requestedBy.trim()) {
       alert("Por favor, complete los campos Área/Ubicación, Descripción y Solicitado por.");
+      return;
+    }
+    if (formData.truck === 'REEMPLAZO' && !formData.replacementTruckTag.trim()) {
+      alert("Por favor ingrese el tag del camión de reemplazo.");
       return;
     }
 
@@ -76,6 +81,12 @@ export default function OutOfProgramList() {
         updatedAt: new Date().toISOString()
       };
 
+      if (formData.truck === 'REEMPLAZO') {
+        payload.truckId = 'REEMPLAZO';
+        payload.replacementTruckTag = formData.replacementTruckTag.trim().toUpperCase();
+        payload.displayTruckName = `${formData.replacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+      }
+
       if (formData.quantity && formData.quantity.trim() !== '') {
         payload.quantity = Number(formData.quantity);
       }
@@ -86,6 +97,7 @@ export default function OutOfProgramList() {
         date: format(new Date(), 'yyyy-MM-dd'),
         shift: 'T39' as ShiftType,
         truck: 'CM95',
+        replacementTruckTag: '',
         areaLocation: '',
         description: '',
         reason: 'Punto caliente',
@@ -276,6 +288,7 @@ export default function OutOfProgramList() {
               <option value="all">Todos</option>
               <option value="CM95">CM95</option>
               <option value="CM97">CM97</option>
+              <option value="REEMPLAZO">REEMPLAZO</option>
             </select>
           </div>
         </div>
@@ -390,7 +403,7 @@ export default function OutOfProgramList() {
                       </span>
                     </td>
                     <td className="py-4 px-6 whitespace-nowrap font-mono font-bold text-slate-900">
-                      {washing.truck}
+                      {washing.displayTruckName || washing.truck}
                     </td>
                     <td className="py-4 px-6">
                       <span className="font-bold text-slate-900 block max-w-[150px] truncate" title={washing.areaLocation}>
@@ -507,7 +520,7 @@ export default function OutOfProgramList() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Camión (Solo CM95/CM97)</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Camión</label>
                   <select
                     value={formData.truck}
                     onChange={e => setFormData({ ...formData, truck: e.target.value })}
@@ -515,9 +528,24 @@ export default function OutOfProgramList() {
                   >
                     <option value="CM95">CM95</option>
                     <option value="CM97">CM97</option>
+                    <option value="REEMPLAZO">REEMPLAZO</option>
                   </select>
                 </div>
               </div>
+
+              {formData.truck === 'REEMPLAZO' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block">Tag del camión de reemplazo *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.replacementTruckTag}
+                    onChange={e => setFormData({ ...formData, replacementTruckTag: e.target.value.toUpperCase() })}
+                    placeholder="Ej. CM102, ALJIBE-07"
+                    className="w-full bg-slate-50 border border-amber-300 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-705 focus:bg-white focus:border-amber-500 outline-hidden transition-all uppercase font-mono"
+                  />
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Área o Ubicación</label>

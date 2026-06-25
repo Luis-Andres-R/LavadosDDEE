@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/Admin/AdminDashboard';
 import OperatorDashboard from './pages/Operator/OperatorDashboard';
 import ReportView from './pages/Admin/ReportView';
+import DashboardBI from './pages/Admin/DashboardBI';
 import { motion, AnimatePresence } from 'motion/react';
 import { Loader2, LogOut, Home } from 'lucide-react';
 
@@ -12,6 +13,10 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'programs' | 'reports'>('programs');
 
   const isReportView = window.location.search.includes('view=report');
+  const isDashboardView = 
+    window.location.pathname === '/dashboard' || 
+    window.location.search.includes('view=dashboard') || 
+    window.location.hash.includes('#/dashboard');
 
   if (loading) {
     return (
@@ -71,6 +76,10 @@ function AppContent() {
         </div>
       </div>
     );
+  }
+
+  if (isDashboardView) {
+    return <DashboardBI />;
   }
 
   return (

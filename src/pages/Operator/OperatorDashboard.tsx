@@ -89,6 +89,7 @@ export default function OperatorDashboard() {
   // Checklist view state
   const [checklistProgram, setChecklistProgram] = useState<WashingProgram | null>(null);
   const [checklistTruck, setChecklistTruck] = useState('');
+  const [checklistReplacementTruckTag, setChecklistReplacementTruckTag] = useState('');
   const [checklistItems, setChecklistItems] = useState<any[]>([]);
   const [checklistObservation, setChecklistObservation] = useState('');
 
@@ -330,7 +331,7 @@ export default function OperatorDashboard() {
         // Register truck operational hours if failed
         const { theoretical, operational, deducted } = calculateOperationalHours(program.shift, data.notPerformedDetectedAt);
         
-        const opHoursData: TruckOperatingHours = {
+        const opHoursData: any = {
           date: program.date,
           shift: program.shift,
           truck: program.truck,
@@ -345,6 +346,12 @@ export default function OperatorDashboard() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
+
+        if (program.truck === 'REEMPLAZO') {
+          opHoursData.truckId = 'REEMPLAZO';
+          opHoursData.replacementTruckTag = program.replacementTruckTag || '';
+          opHoursData.displayTruckName = program.displayTruckName || '';
+        }
 
         const opHId = `${program.date}_${program.shift}_${program.truck.replace(/\s+/g, '_')}`;
         await setDoc(doc(db, 'truckOperatingHours', opHId), opHoursData);
@@ -369,6 +376,7 @@ export default function OperatorDashboard() {
   const handleOpenChecklist = (program: WashingProgram) => {
     setChecklistProgram(program);
     setChecklistTruck(program.truck || '');
+    setChecklistReplacementTruckTag(program.replacementTruckTag || '');
     // Prep list copies with default states or previously set completions
     setChecklistItems(program.items ? [...program.items] : []);
     setChecklistObservation(program.observation || '');
@@ -406,7 +414,11 @@ export default function OperatorDashboard() {
           operatorEmail: opEmail,
           operatorName: opName,
           shift: curShift,
-          truck: checklistTruck || checklistProgram?.truck
+          truck: checklistTruck || checklistProgram?.truck,
+          replacementTruckTag: checklistReplacementTruckTag || checklistProgram?.replacementTruckTag || '',
+          displayTruckName: (checklistTruck || checklistProgram?.truck) === 'REEMPLAZO' && (checklistReplacementTruckTag || checklistProgram?.replacementTruckTag)
+            ? `${(checklistReplacementTruckTag || checklistProgram?.replacementTruckTag || '').toUpperCase()} (Reemplazo)`
+            : ''
         };
       }
       return next;
@@ -415,6 +427,10 @@ export default function OperatorDashboard() {
 
   const handleSaveChecklist = async () => {
     if (!checklistProgram) return;
+    if (checklistTruck === 'REEMPLAZO' && !checklistReplacementTruckTag.trim()) {
+      alert("Por favor ingrese el tag del camión de reemplazo.");
+      return;
+    }
 
     try {
       const activeItems = checklistItems.filter(it => it.active);
@@ -452,8 +468,19 @@ export default function OperatorDashboard() {
         status,
         observation: checklistObservation,
         updatedAt: serverTimestamp(),
-        lastUpdatedBy: opEmail
+        lastUpdatedBy: opEmail,
+        truck: checklistTruck || checklistProgram.truck
       };
+
+      if (checklistTruck === 'REEMPLAZO') {
+        programUpdate.truckId = 'REEMPLAZO';
+        programUpdate.replacementTruckTag = checklistReplacementTruckTag.trim().toUpperCase();
+        programUpdate.displayTruckName = `${checklistReplacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+      } else {
+        programUpdate.truckId = checklistTruck || checklistProgram.truck;
+        programUpdate.replacementTruckTag = '';
+        programUpdate.displayTruckName = checklistTruck || checklistProgram.truck;
+      }
 
       // Create log audit
       const recordData = {
@@ -519,6 +546,12 @@ export default function OperatorDashboard() {
         updatedAt: serverTimestamp()
       } as any;
 
+      if (data.truck === 'REEMPLAZO') {
+        payload.truckId = 'REEMPLAZO';
+        payload.replacementTruckTag = data.replacementTruckTag.trim().toUpperCase();
+        payload.displayTruckName = `${data.replacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+      }
+
       if (data.quantity && data.quantity !== '') {
         payload.quantity = Number(data.quantity);
       }
@@ -540,10 +573,10 @@ export default function OperatorDashboard() {
       {/* Header */}
       <header className="sticky top-0 z-30 bg-slate-900 px-6 py-4 text-white shadow-xl shadow-slate-200">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Logo variant="light" className="h-10" />
-            <div className="border-l border-white/10 pl-3">
-              <h1 className="text-lg font-black tracking-tight leading-none uppercase">OPERADOR</h1>
+          <div className="flex items-center gap-2">
+            <Logo variant="light" compact className="h-auto" />
+            <div className="border-l border-white/10 pl-2">
+              <span className="text-[10px] sm:text-xs font-black tracking-tight leading-none uppercase text-indigo-300">OPERADOR</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -724,7 +757,7 @@ export default function OperatorDashboard() {
                                   </span>
                                 )}
                               </div>
-                              <span className="text-xs font-black text-slate-400 font-mono uppercase">{program.truck}</span>
+                              <span className="text-xs font-black text-slate-400 font-mono uppercase">{program.displayTruckName || program.truck}</span>
                             </div>
 
                             <h3 className="text-lg font-black text-slate-900 tracking-tight leading-tight mb-2">
@@ -818,7 +851,7 @@ export default function OperatorDashboard() {
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-[10px] font-mono font-black uppercase tracking-widest bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-lg">
-                            {item.truck}
+                            {item.displayTruckName || item.truck}
                           </span>
                           <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${
                             item.status === 'Realizado'
@@ -911,26 +944,42 @@ export default function OperatorDashboard() {
             </div>
 
             {/* Inputs in checklist */}
-            <div className="px-8 pt-4 pb-2 bg-slate-50 border-b border-slate-100 flex items-center gap-4">
-              <div className="flex-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Camión Utilizado</label>
-                <div className="relative">
-                  <select
-                    value={checklistTruck}
-                    onChange={e => setChecklistTruck(e.target.value)}
-                    className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-slate-700 outline-hidden focus:border-emerald-500 transition-all cursor-pointer"
-                  >
-                    <option value="" disabled>Seleccionar camión...</option>
-                    {trucks.map(tr => (
-                      <option key={tr.id} value={tr.code}>{tr.code}</option>
-                    ))}
-                  </select>
+            <div className="px-8 pt-4 pb-2 bg-slate-50 border-b border-slate-100 flex flex-col gap-2">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Camión Utilizado</label>
+                  <div className="relative">
+                    <select
+                      value={checklistTruck}
+                      onChange={e => setChecklistTruck(e.target.value)}
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-slate-700 outline-hidden focus:border-emerald-500 transition-all cursor-pointer"
+                    >
+                      <option value="" disabled>Seleccionar camión...</option>
+                      {['CM95', 'CM97', 'REEMPLAZO'].map(code => (
+                        <option key={code} value={code}>{code}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="w-24 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 text-center">
+                  <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Turno Activo</span>
+                  <span className="text-xs font-black text-slate-700">{profile?.assignedShift || 'T39'}</span>
                 </div>
               </div>
-              <div className="w-24 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 text-center">
-                <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Turno Activo</span>
-                <span className="text-xs font-black text-slate-700">{profile?.assignedShift || 'T39'}</span>
-              </div>
+
+              {checklistTruck === 'REEMPLAZO' && (
+                <div className="space-y-1 animate-fade-in">
+                  <label className="text-[9px] font-bold text-amber-500 uppercase tracking-wider block">Tag del camión de reemplazo *</label>
+                  <input
+                    type="text"
+                    required
+                    value={checklistReplacementTruckTag}
+                    onChange={e => setChecklistReplacementTruckTag(e.target.value.toUpperCase())}
+                    placeholder="Ej. CM102"
+                    className="w-full bg-white border border-amber-300 px-3 py-2 rounded-xl text-xs font-black text-slate-700 focus:border-amber-500 transition-all font-mono uppercase"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Checklist items list */}
@@ -959,7 +1008,7 @@ export default function OperatorDashboard() {
                       </span>
                       {item.done && (
                         <span className="text-[8px] font-medium text-emerald-600 block mt-0.5 leading-none">
-                          Lavado: {item.doneAt} c/ {item.truck || 'N/A'} por {item.operatorName || 'Operador'}
+                          Lavado: {item.doneAt} c/ {item.displayTruckName || item.truck || 'N/A'} por {item.operatorName || 'Operador'}
                         </span>
                       )}
                     </div>
@@ -1276,7 +1325,8 @@ function ActionModal({ program, type, trucks, onClose, onSubmit }: { program: Wa
         observation: '',
         notPerformedDetectedAt: format(new Date(), 'HH:mm'),
         notPerformedDetail: '',
-        truck: program.truck || ''
+        truck: program.truck || '',
+        replacementTruckTag: program.replacementTruckTag || ''
     });
 
     const isPartial = type === 'partial';
@@ -1394,9 +1444,23 @@ function ActionModal({ program, type, trucks, onClose, onSubmit }: { program: Wa
                                     onChange={e => setFormData(f => ({ ...f, truck: e.target.value }))}
                                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-6 py-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 cursor-pointer"
                                 >
-                                    {trucks.map(tr => <option key={tr.id} value={tr.code}>{tr.code}</option>)}
+                                    {['CM95', 'CM97', 'REEMPLAZO'].map(code => <option key={code} value={code}>{code}</option>)}
                                 </select>
                             </div>
+
+                            {formData.truck === 'REEMPLAZO' && (
+                                <div className="space-y-2 animate-fade-in">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 ml-1">Tag del camión de reemplazo *</label>
+                                    <input 
+                                        type="text"
+                                        required
+                                        value={formData.replacementTruckTag}
+                                        onChange={e => setFormData(f => ({ ...f, replacementTruckTag: e.target.value.toUpperCase() }))}
+                                        placeholder="Ej. CM102"
+                                        className="w-full rounded-2xl border border-amber-300 bg-amber-50/20 px-6 py-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-amber-500 font-mono uppercase"
+                                    />
+                                </div>
+                            )}
 
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Observaciones en Terreno</label>
@@ -1416,7 +1480,13 @@ function ActionModal({ program, type, trucks, onClose, onSubmit }: { program: Wa
                 <div className="p-8 border-t border-slate-100 flex gap-4">
                     <button onClick={onClose} className="flex-1 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 transition-colors">Atrás</button>
                     <button 
-                        onClick={() => onSubmit(formData)}
+                        onClick={() => {
+                            if (formData.truck === 'REEMPLAZO' && !formData.replacementTruckTag.trim()) {
+                                alert("Por favor ingrese el tag del camión de reemplazo.");
+                                return;
+                            }
+                            onSubmit(formData);
+                        }}
                         className={`flex-1 rounded-[1.25rem] py-4 text-[11px] font-black uppercase tracking-widest text-white shadow-xl transition-all active:scale-[0.98] ${
                             isComplete ? 'bg-emerald-600 shadow-emerald-100' : 
                             isPartial ? 'bg-amber-600 shadow-amber-100' : 'bg-red-600 shadow-red-100'
@@ -1443,6 +1513,7 @@ function OutOfProgramModal({
     date: format(new Date(), 'yyyy-MM-dd'),
     shift: operatorShift || 'T39',
     truck: 'CM95',
+    replacementTruckTag: '',
     areaLocation: '',
     description: '',
     reason: 'Punto caliente',
@@ -1462,6 +1533,7 @@ function OutOfProgramModal({
     if (!formData.description.trim()) return setError('La descripción es requerida');
     if (!formData.requestedBy.trim()) return setError('Solicitado por es requerido');
     if (formData.reason === 'Otro' && !formData.customReason.trim()) return setError('Especifique el otro motivo');
+    if (formData.truck === 'REEMPLAZO' && !formData.replacementTruckTag.trim()) return setError('El tag del camión de reemplazo es requerido');
 
     onSubmit(formData);
   };
@@ -1523,8 +1595,23 @@ function OutOfProgramModal({
             >
               <option value="CM95">CM95</option>
               <option value="CM97">CM97</option>
+              <option value="REEMPLAZO">REEMPLAZO</option>
             </select>
           </div>
+
+          {formData.truck === 'REEMPLAZO' && (
+            <div className="space-y-1 animate-fade-in">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500">Tag del camión de reemplazo *</label>
+              <input 
+                type="text"
+                required
+                value={formData.replacementTruckTag}
+                onChange={e => setFormData(p => ({ ...p, replacementTruckTag: e.target.value.toUpperCase() }))}
+                placeholder="Ej. CM102"
+                className="w-full rounded-2xl border border-amber-350 bg-amber-50/20 py-3 px-4 text-sm font-bold text-slate-705 focus:bg-white focus:border-indigo-505 outline-hidden transition-all uppercase font-mono"
+              />
+            </div>
+          )}
 
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Área o Ubicación</label>

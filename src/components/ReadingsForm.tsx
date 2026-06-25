@@ -16,6 +16,7 @@ export default function ReadingsForm() {
     shift: 'T39' as ShiftType,
     washingOperator: WASHING_OPERATORS[0],
     truck: '',
+    replacementTruckTag: '',
     readings: {
       TKA: { us: '', temperature: '', level: '' },
       TKC: { us: '', temperature: '', level: '' },
@@ -29,9 +30,19 @@ export default function ReadingsForm() {
     const unsub = onSnapshot(collection(db, 'trucks'), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckInfo));
       const activeTrucks = data.filter(t => t.active && WASHING_TRUCKS.includes(t.code) && (t.status === 'En servicio' || t.status === 'Disponible'));
-      setTrucks(activeTrucks);
-      if (activeTrucks.length > 0 && (!formData.truck || !activeTrucks.some(t => t.code === formData.truck))) {
-        setFormData(p => ({ ...p, truck: activeTrucks[0].code }));
+      
+      const virtualReplacementTruck: TruckInfo = {
+        code: 'REEMPLAZO',
+        status: 'Disponible',
+        active: true,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'system'
+      };
+      
+      const allActive = [...activeTrucks, virtualReplacementTruck];
+      setTrucks(allActive);
+      if (allActive.length > 0 && (!formData.truck || !allActive.some(t => t.code === formData.truck))) {
+        setFormData(p => ({ ...p, truck: allActive[0].code }));
       }
     });
     return () => unsub();
@@ -55,6 +66,11 @@ export default function ReadingsForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.truck === 'REEMPLAZO' && !formData.replacementTruckTag.trim()) {
+      alert("Por favor ingrese el tag del camión de reemplazo.");
+      return;
+    }
+
     setLoading(true);
     try {
       // Parse values only on submit
@@ -71,13 +87,19 @@ export default function ReadingsForm() {
       // Keep TKD for old records compatibility
       parsedReadings['TKD'] = parsedReadings['TKE'];
 
-      const data: Omit<OperationalReading, 'id'> = {
+      const data: any = {
         ...formData,
         readings: parsedReadings as any,
         operatorEmail: profile?.email || auth.currentUser?.email || 'unknown',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
+
+      if (formData.truck === 'REEMPLAZO') {
+        data.truckId = 'REEMPLAZO';
+        data.replacementTruckTag = formData.replacementTruckTag.trim().toUpperCase();
+        data.displayTruckName = `${formData.replacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+      }
       
       await addDoc(collection(db, 'operationalReadings'), data);
       
@@ -125,7 +147,7 @@ export default function ReadingsForm() {
                 className="w-full rounded-xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-bold text-white outline-hidden focus:bg-white/10 focus:border-blue-500"
               >
                 <option value="" disabled className="bg-slate-900">Seleccionar...</option>
-                {trucks.map(t => <option key={t.id} value={t.code} className="bg-slate-900">{t.code}</option>)}
+                {trucks.map(t => <option key={t.code} value={t.code} className="bg-slate-900">{t.code}</option>)}
               </select>
             </div>
             <div className="space-y-2">
@@ -154,6 +176,20 @@ export default function ReadingsForm() {
               {WASHING_OPERATORS.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
             </select>
           </div>
+
+          {formData.truck === 'REEMPLAZO' && (
+            <div className="mt-4 space-y-2 animate-fade-in">
+              <label className="text-[9px] font-black text-amber-400 uppercase tracking-widest ml-1">Tag del camión de reemplazo *</label>
+              <input 
+                type="text"
+                required
+                value={formData.replacementTruckTag}
+                onChange={e => setFormData(p => ({ ...p, replacementTruckTag: e.target.value.toUpperCase() }))}
+                placeholder="Ej. CM102"
+                className="w-full rounded-xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-bold text-white outline-hidden focus:bg-white/10 focus:border-blue-500 uppercase font-mono"
+              />
+            </div>
+          )}
         </div>
 
         {/* Estanques */}

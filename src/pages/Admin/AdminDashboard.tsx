@@ -110,6 +110,12 @@ export default function AdminDashboard() {
             icon={<AlertTriangle size={18} />} 
             label="Fuera de programa" 
           />
+          <SidebarLink 
+            active={false} 
+            onClick={() => window.open('/dashboard', '_blank')} 
+            icon={<BarChart3 size={18} className="text-orange-400" />} 
+            label="Dashboard BI / TV" 
+          />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-slate-800">
@@ -159,6 +165,15 @@ export default function AdminDashboard() {
               <Bell size={20} />
             </button>
             
+            <button 
+              onClick={() => window.open('/dashboard', '_blank')}
+              className="flex items-center gap-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-orange-500/30 px-5 py-3 text-sm font-bold text-white shadow-xl hover:bg-slate-800 hover:scale-[1.02] transition-all active:scale-95"
+            >
+              <BarChart3 size={18} className="text-orange-400 animate-pulse" />
+              <span className="hidden sm:inline">Dashboard BI / TV</span>
+              <span className="sm:hidden">BI</span>
+            </button>
+
             {activeTab === 'programs' && (
               <button 
                 onClick={() => setShowProgramForm(true)}

@@ -1,0 +1,759 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { db } from '../../firebase';
+import { collection, query, onSnapshot } from 'firebase/firestore';
+import { WashingProgram, OutOfProgramWashing, TruckInfo, TruckStatus } from '../../types';
+import { format, subDays, parseISO } from 'date-fns';
+import { 
+  TrendingUp, 
+  Activity, 
+  Calendar, 
+  Clock, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Truck, 
+  Layers,
+  ArrowUpRight,
+  Info,
+  RefreshCw,
+  Award
+} from 'lucide-react';
+
+export default function DashboardBI() {
+  const [loading, setLoading] = useState(true);
+  const [washingPrograms, setWashingPrograms] = useState<WashingProgram[]>([]);
+  const [outOfProgramWashings, setOutOfProgramWashings] = useState<OutOfProgramWashing[]>([]);
+  const [trucks, setTrucks] = useState<TruckInfo[]>([]);
+  const [currentTime, setCurrentTime] = useState<string>(format(new Date(), 'HH:mm:ss'));
+  const [lastUpdated, setLastUpdated] = useState<string>(format(new Date(), 'HH:mm:ss'));
+  const [hoveredPoint, setHoveredPoint] = useState<{ name: string; value: number; x: number; y: number } | null>(null);
+
+  // Clock ticks every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(format(new Date(), 'HH:mm:ss'));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Set up real-time firebase listeners
+  useEffect(() => {
+    setLoading(true);
+
+    const unsubPrograms = onSnapshot(
+      query(collection(db, 'washingPrograms')),
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WashingProgram));
+        setWashingPrograms(data);
+        setLastUpdated(format(new Date(), 'HH:mm:ss'));
+        setLoading(false);
+      },
+      (err) => console.error("Error loading programs:", err)
+    );
+
+    const unsubOutOfProgram = onSnapshot(
+      query(collection(db, 'outOfProgramWashings')),
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as OutOfProgramWashing));
+        setOutOfProgramWashings(data);
+        setLastUpdated(format(new Date(), 'HH:mm:ss'));
+      },
+      (err) => console.error("Error loading out-of-program:", err)
+    );
+
+    const unsubTrucks = onSnapshot(
+      query(collection(db, 'trucks')),
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckInfo));
+        setTrucks(data);
+        setLastUpdated(format(new Date(), 'HH:mm:ss'));
+      },
+      (err) => console.error("Error loading trucks:", err)
+    );
+
+    // Auto-refresh every 60 seconds as requested
+    const intervalFallback = setInterval(() => {
+      setLastUpdated(format(new Date(), 'HH:mm:ss'));
+    }, 60000);
+
+    return () => {
+      unsubPrograms();
+      unsubOutOfProgram();
+      unsubTrucks();
+      clearInterval(intervalFallback);
+    };
+  }, []);
+
+  // Helper matching existing logic
+  const getProgramStructures = (p: WashingProgram) => {
+    const isChecklist = p.controlType === 'checklist' || (p.items && p.items.length > 0);
+    let programmed = 0;
+    let completed = 0;
+
+    if (isChecklist) {
+      programmed = p.items?.length || p.programmedQuantity || 0;
+      if (p.status === 'Completo' || p.status === 'Cerrado') {
+        completed = programmed;
+      } else if (p.status === 'No realizado') {
+        completed = 0;
+      } else {
+        completed = p.items?.filter(item => item.done).length ?? p.completedCount ?? 0;
+      }
+    } else {
+      programmed = p.programmedQuantity || 0;
+      if (p.status === 'Completo' || p.status === 'Cerrado') {
+        completed = programmed;
+      } else if (p.status === 'No realizado') {
+        completed = 0;
+      } else {
+        completed = p.completedCount ?? 0;
+      }
+    }
+
+    completed = Math.max(0, Math.min(programmed, completed));
+    const pending = Math.max(0, programmed - completed);
+
+    return { programmed, completed, pending };
+  };
+
+  // KPI Calculations
+  const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
+  const currentMonthPrefix = useMemo(() => format(new Date(), 'yyyy-MM'), []);
+
+  const stats = useMemo(() => {
+    // 1. Today's stats
+    const todayPrograms = washingPrograms.filter(p => p.date === todayStr);
+    let todayProgrammed = 0;
+    let todayCompleted = 0;
+    let todayPending = 0;
+
+    todayPrograms.forEach(p => {
+      const { programmed, completed, pending } = getProgramStructures(p);
+      todayProgrammed += programmed;
+      todayCompleted += completed;
+      todayPending += pending;
+    });
+
+    const todayCompliance = todayProgrammed > 0 
+      ? Math.round((todayCompleted / todayProgrammed) * 100) 
+      : 0;
+
+    // 2. Monthly stats
+    const monthlyPrograms = washingPrograms.filter(p => p.date && p.date.startsWith(currentMonthPrefix));
+    let monthProgrammed = 0;
+    let monthCompleted = 0;
+    let monthPending = 0;
+
+    monthlyPrograms.forEach(p => {
+      const { programmed, completed, pending } = getProgramStructures(p);
+      monthProgrammed += programmed;
+      monthCompleted += completed;
+      monthPending += pending;
+    });
+
+    const monthCompliance = monthProgrammed > 0 
+      ? Math.round((monthCompleted / monthProgrammed) * 100) 
+      : 0;
+
+    // 3. Out of program stats
+    const todayOOP = outOfProgramWashings.filter(w => w.date === todayStr).length;
+    const monthOOP = outOfProgramWashings.filter(w => w.date && w.date.startsWith(currentMonthPrefix)).length;
+
+    // 4. Trucks Status - specifically for CM95 and CM97
+    const validTruckCodes = ['CM95', 'CM97'];
+    const truckStatusMap: Record<string, TruckStatus> = {
+      CM95: 'Disponible',
+      CM97: 'Disponible'
+    };
+
+    trucks.forEach(t => {
+      if (validTruckCodes.includes(t.code)) {
+        truckStatusMap[t.code] = t.status;
+      }
+    });
+
+    // 5. Line Chart SVG Data: Evolution of the last 30 days
+    const last30DaysRaw = [];
+    let maxDailyCompleted = 0;
+    for (let i = 29; i >= 0; i--) {
+      const d = subDays(new Date(), i);
+      const dStr = format(d, 'yyyy-MM-dd');
+      const dLabel = format(d, 'dd/MM');
+
+      const dayPrograms = washingPrograms.filter(p => p.date === dStr);
+      let dayCompleted = 0;
+      dayPrograms.forEach(p => {
+        const { completed } = getProgramStructures(p);
+        dayCompleted += completed;
+      });
+
+      if (dayCompleted > maxDailyCompleted) {
+        maxDailyCompleted = dayCompleted;
+      }
+
+      last30DaysRaw.push({
+        dateStr: dStr,
+        label: dLabel,
+        value: dayCompleted
+      });
+    }
+
+    // 6. Bar Chart: Advance by Area (Current Month)
+    const areas = [
+      'Equipos críticos CS',
+      'Interior planta CS',
+      'Equipos críticos en periferia',
+      'Lavado periferia'
+    ] as const;
+
+    let maxAreaValue = 0;
+    const areaChartData = areas.map(area => {
+      const areaPrograms = monthlyPrograms.filter(p => p.areaName === area);
+      let prog = 0;
+      let comp = 0;
+
+      areaPrograms.forEach(p => {
+        const { programmed, completed } = getProgramStructures(p);
+        prog += programmed;
+        comp += completed;
+      });
+
+      const maxVal = Math.max(prog, comp);
+      if (maxVal > maxAreaValue) {
+        maxAreaValue = maxVal;
+      }
+
+      return {
+        areaMatch: area,
+        area: area.replace('Equipos críticos ', 'Eq. Críticos ').replace('en periferia', 'Perif.'),
+        programmed: prog,
+        completed: comp
+      };
+    });
+
+    // 7. Table Summary: Last 10 days with activity
+    const summaryTableMap: Record<string, { date: string, programmed: number, completed: number, pending: number, oop: number }> = {};
+    
+    // Add programs
+    washingPrograms.forEach(p => {
+      if (!p.date) return;
+      const { programmed, completed, pending } = getProgramStructures(p);
+      if (!summaryTableMap[p.date]) {
+        summaryTableMap[p.date] = { date: p.date, programmed: 0, completed: 0, pending: 0, oop: 0 };
+      }
+      summaryTableMap[p.date].programmed += programmed;
+      summaryTableMap[p.date].completed += completed;
+      summaryTableMap[p.date].pending += pending;
+    });
+
+    // Add OOP count
+    outOfProgramWashings.forEach(w => {
+      if (!w.date) return;
+      if (!summaryTableMap[w.date]) {
+        summaryTableMap[w.date] = { date: w.date, programmed: 0, completed: 0, pending: 0, oop: 0 };
+      }
+      summaryTableMap[w.date].oop += 1;
+    });
+
+    const summaryTableData = Object.values(summaryTableMap)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 8)
+      .map(row => {
+        const pct = row.programmed > 0 ? Math.round((row.completed / row.programmed) * 100) : 0;
+        return {
+          ...row,
+          compliance: pct
+        };
+      });
+
+    return {
+      todayProgrammed,
+      todayCompleted,
+      todayPending,
+      todayCompliance,
+      monthProgrammed,
+      monthCompleted,
+      monthPending,
+      monthCompliance,
+      todayOOP,
+      monthOOP,
+      truckStatuses: truckStatusMap,
+      last30DaysRaw,
+      maxDailyCompleted: maxDailyCompleted || 1,
+      areaChartData,
+      maxAreaValue: maxAreaValue || 1,
+      summaryTableData
+    };
+  }, [washingPrograms, outOfProgramWashings, trucks, todayStr, currentMonthPrefix]);
+
+  const getStatusColor = (status: TruckStatus) => {
+    switch (status) {
+      case 'Disponible':
+      case 'En servicio':
+        return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+      case 'Fuera de servicio':
+        return 'bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      default:
+        return 'bg-amber-500/10 text-amber-400 border border-[#f59e0b]/20';
+    }
+  };
+
+  const getStatusText = (status: TruckStatus) => {
+    if (status === 'Disponible' || status === 'En servicio') return 'DISPONIBLE';
+    if (status === 'Fuera de servicio') return 'MANTENCIÓN';
+    return 'STANDBY';
+  };
+
+  // Render SVG points of evolution line chart
+  const lineChartPoints = useMemo(() => {
+    const width = 500;
+    const height = 120;
+    const paddingLeft = 20;
+    const paddingRight = 20;
+    const paddingTop = 15;
+    const paddingBottom = 15;
+
+    const usableWidth = width - paddingLeft - paddingRight;
+    const usableHeight = height - paddingTop - paddingBottom;
+
+    const points = stats.last30DaysRaw.map((day, idx) => {
+      const x = paddingLeft + (idx / 29) * usableWidth;
+      const y = height - paddingBottom - (day.value / stats.maxDailyCompleted) * usableHeight;
+      return { x, y, ...day };
+    });
+
+    const pathData = points.reduce((acc, p, idx) => {
+      return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+    }, '');
+
+    const areaPathData = points.length > 0
+      ? `${pathData} L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`
+      : '';
+
+    return { points, pathData, areaPathData, width, height, paddingLeft, paddingBottom };
+  }, [stats.last30DaysRaw, stats.maxDailyCompleted]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-[#0b0f19] text-slate-100">
+        <Activity className="h-10 w-10 animate-spin text-orange-500 mb-4" />
+        <p className="text-sm font-semibold uppercase tracking-wider text-slate-400">Sincronizando con Servidores SQM...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen w-full bg-[#0b0f19] text-slate-100 p-6 flex flex-col justify-between font-sans selection:bg-orange-500/30 selection:text-white">
+      {/* HEADER SECTION */}
+      <header className="flex flex-col md:flex-row items-center justify-between border-b border-slate-800/80 pb-4 mb-5 gap-4">
+        <div className="flex items-center gap-4">
+          <img 
+            src="/logo-sqm.png" 
+            alt="SQM Logo" 
+            className="h-12 w-12 object-contain filter drop-shadow-[0_2px_10px_rgba(255,255,255,0.05)]"
+            referrerPolicy="no-referrer"
+          />
+          <div className="border-l border-slate-800 pl-4">
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white leading-none">
+              PROGRAMA DE LAVADOS SQM
+            </h1>
+            <p className="text-xs font-bold text-orange-500 uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+              BI Dashboard Operacional de TV
+            </p>
+          </div>
+        </div>
+
+        {/* Real-time clocks / status */}
+        <div className="flex items-center gap-5 bg-slate-900/60 border border-slate-800/80 px-5 py-2.5 rounded-2xl shadow-inner">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-semibold text-slate-400">Hora:</span>
+            <span className="text-base font-black text-white font-mono">{currentTime}</span>
+          </div>
+          <div className="h-5 w-px bg-slate-800"></div>
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" style={{ animationDuration: '6s' }} />
+            <span className="text-xs font-bold text-slate-400 uppercase">Última actualización:</span>
+            <span className="text-xs font-black text-slate-300 font-mono">{lastUpdated}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* KPI GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5 shrink-0">
+        {/* KPI 1: Cumplimiento de Hoy */}
+        <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">CUMPLIMIENTO HOY</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-black tracking-tighter text-white font-mono">{stats.todayCompliance}%</span>
+              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full flex items-center gap-0.5">
+                <ArrowUpRight size={10} /> Diario
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 pt-1">
+              <div>Prog: <span className="font-bold text-slate-200 font-mono text-sm">{stats.todayProgrammed}</span></div>
+              <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+              <div>Real: <span className="font-bold text-emerald-400 font-mono text-sm">{stats.todayCompleted}</span></div>
+              <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+              <div>Pend: <span className="font-bold text-orange-400 font-mono text-sm">{stats.todayPending}</span></div>
+            </div>
+          </div>
+          {/* Circular Progress Indicator */}
+          <div className="relative w-20 h-20 shrink-0">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+              <circle
+                className="text-slate-800"
+                strokeWidth="3.5"
+                stroke="currentColor"
+                fill="none"
+                cx="18"
+                cy="18"
+                r="15.9155"
+              />
+              <circle
+                className="text-emerald-500 transition-all duration-1000 ease-out"
+                strokeDasharray={`${stats.todayCompliance}, 100`}
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                stroke="currentColor"
+                fill="none"
+                cx="18"
+                cy="18"
+                r="15.9155"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 2: Cumplimiento Mensual */}
+        <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">ACUMULADO MES</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-black tracking-tighter text-white font-mono">{stats.monthCompliance}%</span>
+              <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 px-2.5 py-0.5 rounded-full flex items-center gap-0.5">
+                <ArrowUpRight size={10} /> Mensual
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 pt-1">
+              <div>Prog: <span className="font-bold text-slate-200 font-mono text-sm">{stats.monthProgrammed}</span></div>
+              <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+              <div>Real: <span className="font-bold text-sky-400 font-mono text-sm">{stats.monthCompleted}</span></div>
+              <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+              <div>Pend: <span className="font-bold text-orange-400 font-mono text-sm">{stats.monthPending}</span></div>
+            </div>
+          </div>
+          {/* Circular Progress Indicator */}
+          <div className="relative w-20 h-20 shrink-0">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+              <circle
+                className="text-slate-800"
+                strokeWidth="3.5"
+                stroke="currentColor"
+                fill="none"
+                cx="18"
+                cy="18"
+                r="15.9155"
+              />
+              <circle
+                className="text-sky-400 transition-all duration-1000 ease-out"
+                strokeDasharray={`${stats.monthCompliance}, 100`}
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                stroke="currentColor"
+                fill="none"
+                cx="18"
+                cy="18"
+                r="15.9155"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Award className="w-7 h-7 text-sky-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 3: Fuera de Programa */}
+        <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">FUERA DE PROGRAMA</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-black tracking-tighter text-orange-500 font-mono">{stats.todayOOP}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Hoy</span>
+            </div>
+            <div className="text-xs font-semibold text-slate-400 pt-1">
+              Acumulado del mes actual: <span className="font-black text-orange-400 text-sm font-mono ml-1">{stats.monthOOP}</span>
+            </div>
+          </div>
+          <div className="flex flex-col items-center justify-center bg-orange-500/10 border border-orange-500/10 rounded-2xl p-4 shrink-0 w-20 h-20 opacity-90">
+            <AlertTriangle className="w-8 h-8 text-orange-500 animate-pulse" />
+            <span className="text-[10px] font-black text-orange-400 uppercase tracking-wider mt-1">Alertas</span>
+          </div>
+        </div>
+      </div>
+
+      {/* MID SECTION: CHARTS & TRUCK STATUSES */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-5 flex-1 min-h-0">
+        {/* Left Column: Trucks Operational Status */}
+        <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl xl:h-full">
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <Truck className="w-5 h-5 text-orange-500" />
+              <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">MONITOR DE CAMIONES</h2>
+            </div>
+            <div className="space-y-3">
+              {Object.entries(stats.truckStatuses).map(([code, statusUnknown]) => {
+                const status = statusUnknown as TruckStatus;
+                return (
+                  <div 
+                    key={code} 
+                    className="bg-slate-950/60 border border-slate-800/40 p-3 rounded-2xl flex items-center justify-between shadow-sm transition-all duration-300 hover:border-slate-700"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center font-bold text-slate-200 text-xs tracking-tight select-none">
+                        {code}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-extrabold text-white">Camión de Lavado</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Módulos DDEE</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${status === 'Disponible' || status === 'En servicio' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                      <span className={`text-[10px] font-black tracking-wider px-2.5 py-1 rounded-full ${getStatusColor(status)}`}>
+                        {getStatusText(status)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-start gap-2 bg-slate-950/30 p-2.5 rounded-xl">
+            <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+            <p className="text-[10px] leading-relaxed text-slate-400 font-medium">
+              Los estados de camiones se administran en tiempo real por el equipo de patio SQM.
+            </p>
+          </div>
+        </div>
+
+        {/* Middle Column (2x span): Line Chart SVG (30 Days Evolution) */}
+        <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">TENDENCIA DIARIA DE LAVADOS (ÚLTIMOS 30 DÍAS)</h2>
+            </div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-950 px-2.5 py-1 rounded-lg">Realizado</span>
+          </div>
+
+          <div className="flex-1 w-full relative min-h-[220px] flex flex-col justify-center">
+            {/* SVG implementation for maximum performance with zero NPM deps */}
+            <svg 
+              viewBox={`0 0 ${lineChartPoints.width} ${lineChartPoints.height}`} 
+              className="w-full h-full overflow-visible"
+            >
+              <defs>
+                <linearGradient id="svgGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Horizontal Help lines */}
+              <line x1="20" y1="15" x2="480" y2="15" stroke="#1e293b" strokeDasharray="3,3" strokeWidth="0.5" />
+              <line x1="20" y1="60" x2="480" y2="60" stroke="#1e293b" strokeDasharray="3,3" strokeWidth="0.5" />
+              <line x1="20" y1="105" x2="480" y2="105" stroke="#1e293b" strokeWidth="0.5" />
+
+              {/* Gradient Area under line */}
+              <path d={lineChartPoints.areaPathData} fill="url(#svgGradient)" />
+
+              {/* Foreground stroke line */}
+              <path 
+                d={lineChartPoints.pathData} 
+                fill="none" 
+                stroke="#10b981" 
+                strokeWidth="2.5" 
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+
+              {/* Interactive interactive nodes */}
+              {lineChartPoints.points.map((pt, i) => (
+                <g key={i}>
+                  <circle 
+                    cx={pt.x} 
+                    cy={pt.y} 
+                    r="3.5" 
+                    fill="#10b981" 
+                    className="hover:scale-[1.8] hover:fill-white cursor-pointer transition-transform duration-300"
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setHoveredPoint({
+                        name: pt.label,
+                        value: pt.value,
+                        x: pt.x,
+                        y: pt.y - 12
+                      });
+                    }}
+                    onMouseLeave={() => setHoveredPoint(null)}
+                  />
+                </g>
+              ))}
+
+              {/* Hover Tooltip Overlay in SVG */}
+              {hoveredPoint && (
+                <g>
+                  {/* Tooltip Card background */}
+                  <rect 
+                    x={Math.max(10, Math.min(lineChartPoints.width - 95, hoveredPoint.x - 42))} 
+                    y={Math.max(2, hoveredPoint.y - 25)} 
+                    width="85" 
+                    height="20" 
+                    rx="4" 
+                    fill="#1e293b" 
+                    stroke="#10b981" 
+                    strokeWidth="0.75" 
+                  />
+                  <text 
+                    x={Math.max(52, Math.min(lineChartPoints.width - 53, hoveredPoint.x))} 
+                    y={Math.max(15, hoveredPoint.y - 11)} 
+                    textAnchor="middle" 
+                    fill="#fff" 
+                    fontSize="8" 
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                  >
+                    {hoveredPoint.name}: {hoveredPoint.value} lav.
+                  </text>
+                </g>
+              )}
+            </svg>
+
+            {/* X-axis days markers */}
+            <div className="flex justify-between text-[9px] text-slate-500 font-extrabold px-5 mt-2 select-none">
+              <span>{stats.last30DaysRaw[0]?.label}</span>
+              <span>{stats.last30DaysRaw[10]?.label}</span>
+              <span>{stats.last30DaysRaw[20]?.label}</span>
+              <span className="text-emerald-400 font-black">{stats.last30DaysRaw[29]?.label} (Hoy)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Custom Area Bar Chart */}
+        <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl">
+          <div className="flex items-center gap-2 mb-4 shrink-0">
+            <Calendar className="w-5 h-5 text-sky-400" />
+            <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">AVANCE POR ÁREAS (MES)</h2>
+          </div>
+
+          <div className="flex-1 flex flex-col justify-between space-y-3.5">
+            {stats.areaChartData.map((row, idx) => {
+              const maxVal = Math.max(row.programmed, row.completed);
+              const complianceRate = row.programmed > 0 ? Math.round((row.completed / row.programmed) * 100) : 0;
+              
+              return (
+                <div key={idx} className="bg-slate-950/40 border border-slate-800/30 p-2.5 rounded-2xl">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-[10px] font-black text-slate-300 truncate tracking-wide max-w-[160px]" title={row.areaMatch}>
+                      {row.areaMatch}
+                    </span>
+                    <span className="text-[10px] font-black font-mono text-sky-400">{complianceRate}%</span>
+                  </div>
+
+                  {/* Horizontal Bar visualization */}
+                  <div className="relative w-full h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-800 flex items-center">
+                    {/* Programmed block (gray background bar) */}
+                    <div 
+                      className="absolute left-0 top-0 h-full bg-slate-800 rounded-full"
+                      style={{ width: `${Math.min(100, stats.maxAreaValue > 0 ? (row.programmed / stats.maxAreaValue) * 100 : 0)}%` }}
+                    />
+                    {/* Realized bar (overlapping glowing cyan) */}
+                    <div 
+                      className="absolute left-0 top-0 h-full bg-cyan-500 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.4)] transition-all duration-500"
+                      style={{ width: `${Math.min(100, stats.maxAreaValue > 0 ? (row.completed / stats.maxAreaValue) * 100 : 0)}%` }}
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-bold">
+                    <span>Prog: <strong className="text-slate-400 font-mono">{row.programmed}</strong></span>
+                    <span>Realizado: <strong className="text-cyan-400 font-mono">{row.completed}</strong></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* BOTTOM SECTION: DETAILED SUMMARY TABLE */}
+      <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 shadow-xl shrink-0">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Layers className="w-5 h-5 text-orange-500" />
+            <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">HISTORIAL OPERACIONAL RECIENTE</h2>
+          </div>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Registros históricos de los últimos 8 días</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-slate-800/80 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
+                <th className="pb-3 pl-3">Fecha</th>
+                <th className="pb-3 text-center">Programado (DDEE)</th>
+                <th className="pb-3 text-center">Realizado (DDEE)</th>
+                <th className="pb-3 text-center">Pendiente (DDEE)</th>
+                <th className="pb-3 text-center">Fuera de Programa</th>
+                <th className="pb-3 text-right pr-3">Cumplimiento %</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/40 text-xs font-bold text-slate-300">
+              {stats.summaryTableData.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-6 text-slate-500">Sin datos operacionales registrados</td>
+                </tr>
+              ) : (
+                stats.summaryTableData.map((row) => (
+                  <tr key={row.date} className="hover:bg-slate-950/40 transition-colors">
+                    <td className="py-3 pl-3 text-white font-mono">{format(parseISO(row.date), 'dd/MM/yyyy')}</td>
+                    <td className="py-3 text-center font-mono text-slate-400">{row.programmed}</td>
+                    <td className="py-3 text-center font-mono text-emerald-400">{row.completed}</td>
+                    <td className="py-3 text-center font-mono text-orange-400">{row.pending}</td>
+                    <td className="py-3 text-center font-mono">
+                      {row.oop > 0 ? (
+                        <span className="bg-orange-500/10 text-orange-400 border border-orange-500/25 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+                          {row.oop} Trabajos
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
+                    <td className="py-3 text-right pr-3 font-mono">
+                      <div className="flex items-center justify-end gap-2.5">
+                        <div className="w-16 bg-slate-800 h-1.5 rounded-full overflow-hidden shrink-0 hidden sm:block">
+                          <div 
+                            className={`h-full rounded-full ${row.compliance >= 80 ? 'bg-emerald-500' : row.compliance >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                            style={{ width: `${Math.min(100, row.compliance)}%` }}
+                          />
+                        </div>
+                        <span className={`text-sm font-black ${row.compliance >= 80 ? 'text-emerald-400' : row.compliance >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>
+                          {row.compliance}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

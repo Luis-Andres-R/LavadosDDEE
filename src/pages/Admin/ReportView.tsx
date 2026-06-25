@@ -98,10 +98,23 @@ export default function ReportView() {
     failed: outOfPrograms.filter(w => w.status === 'No realizado').length,
   };
 
-  // Grouped operational hours specifically for CM95, CM97, CM10, CM49. CM58 excluded.
+  // Grouped operational hours for CM95, CM97 and REEMPLAZO trucks (12 hours per day, 07:00-19:00)
   const getOpHoursSummary = () => {
     const summary: Record<string, { expected: number, operational: number, deducted: number, reasons: string[] }> = {};
-    const validTrucks = ['CM95', 'CM97', 'CM10', 'CM49'];
+    
+    const replacementTags = new Set<string>();
+    programs.forEach(p => {
+      if (p.truck === 'REEMPLAZO' && p.replacementTruckTag) {
+        replacementTags.add(p.replacementTruckTag.toUpperCase());
+      }
+    });
+    outOfPrograms.forEach(w => {
+      if (w.truck === 'REEMPLAZO' && w.replacementTruckTag) {
+        replacementTags.add(w.replacementTruckTag.toUpperCase());
+      }
+    });
+
+    const validTrucks = ['CM95', 'CM97', ...Array.from(replacementTags)];
     
     validTrucks.forEach(truck => {
       summary[truck] = { expected: 0, operational: 0, deducted: 0, reasons: [] };
@@ -129,44 +142,79 @@ export default function ReportView() {
 
     uniqueDates.forEach(date => {
       validTrucks.forEach(truck => {
-        summary[truck].expected += 24; // Each calendar day counts as 24 expected hours
+        let dayExpected = 12;
+        let dayDeducted = 0;
+        let dayOperational = 12;
 
-        // Check if status is "Fuera de servicio" during this day
-        const statusRecord = statusHistory.find(h => h.date === date && h.shift === 'T39') || statusHistory.find(h => h.date === date);
-        const truckStatus = statusRecord?.trucks?.find(t => t.code === truck)?.status;
+        if (truck === 'CM95' || truck === 'CM97') {
+          // Check if status is "Fuera de servicio" during this day
+          const statusRecord = statusHistory.find(h => h.date === date && h.shift === 'T39') || statusHistory.find(h => h.date === date);
+          const truckStatus = statusRecord?.trucks?.find(t => t.code === truck)?.status;
 
-        if (truckStatus === 'Fuera de servicio') {
-          // Fuera de servicio -> 0 operational hours, 24 deducted hours
-          summary[truck].deducted += 24;
-          const label = 'Fuera de servicio';
-          if (!summary[truck].reasons.includes(label)) {
-            summary[truck].reasons.push(label);
-          }
-        } else {
-          // Operativo (En servicio, Disponible, or empty status / default) -> 24 operational hours, 0 deducted
-          summary[truck].operational += 24;
-          // Optionally grab failure reason if any was registered in operating hours log
-          const failure = opHours.find(h => h.date === date && h.truck === truck);
-          if (failure && failure.reason) {
-            if (!summary[truck].reasons.includes(failure.reason)) {
-              summary[truck].reasons.push(failure.reason);
+          if (truckStatus === 'Fuera de servicio') {
+            dayExpected = 12;
+            dayDeducted = 12;
+            dayOperational = 0;
+            const label = 'Fuera de servicio';
+            if (!summary[truck].reasons.includes(label)) {
+              summary[truck].reasons.push(label);
+            }
+          } else {
+            // Check if there are failure hours logged in operatingHours
+            const failure = opHours.find(h => h.date === date && h.truck === truck);
+            if (failure) {
+              dayDeducted = Number(failure.deductedHours) || 0;
+              dayOperational = Math.max(0, 12 - dayDeducted);
+              if (failure.reason && !summary[truck].reasons.includes(failure.reason)) {
+                summary[truck].reasons.push(failure.reason);
+              }
             }
           }
+        } else {
+          // It's a REEMPLAZO truck!
+          // We check if it is active/registered as in service on this date.
+          const hasActiveWork = programs.some(p => p.date === date && p.truck === 'REEMPLAZO' && p.replacementTruckTag?.toUpperCase() === truck && p.status !== 'No realizado') ||
+                               outOfPrograms.some(w => w.date === date && w.truck === 'REEMPLAZO' && w.replacementTruckTag?.toUpperCase() === truck && w.status !== 'No realizado');
+
+          if (hasActiveWork) {
+            dayExpected = 12;
+            const failure = opHours.find(h => h.date === date && (h.truck === truck || h.replacementTruckTag?.toUpperCase() === truck));
+            if (failure) {
+              dayDeducted = Number(failure.deductedHours) || 0;
+              dayOperational = Math.max(0, 12 - dayDeducted);
+              if (failure.reason && !summary[truck].reasons.includes(failure.reason)) {
+                summary[truck].reasons.push(failure.reason);
+              }
+            } else {
+              dayOperational = 12;
+              dayDeducted = 0;
+            }
+          } else {
+            dayExpected = 0;
+            dayOperational = 0;
+            dayDeducted = 0;
+          }
         }
+
+        summary[truck].expected += dayExpected;
+        summary[truck].operational += dayOperational;
+        summary[truck].deducted += dayDeducted;
       });
     });
 
-    return Object.entries(summary).map(([truck, s]) => ({
-      truck,
-      ...s,
-      availability: s.expected > 0 ? (s.operational / s.expected) * 100 : 100
-    })).sort((a, b) => a.truck.localeCompare(b.truck));
+    return Object.entries(summary)
+      .filter(([_, s]) => s.expected > 0)
+      .map(([truck, s]) => ({
+        truck,
+        ...s,
+        availability: s.expected > 0 ? (s.operational / s.expected) * 100 : 100
+      })).sort((a, b) => a.truck.localeCompare(b.truck));
   };
 
-  // Status Summary
+  // Status Summary for official trucks only
   const getStatusSummary = () => {
     const summary: Record<string, Record<string, number>> = {};
-    const validTrucks = ['CM95', 'CM97', 'CM10', 'CM49'];
+    const validTrucks = ['CM95', 'CM97'];
     validTrucks.forEach(code => {
       summary[code] = { 'En servicio': 0, 'Disponible': 0, 'Fuera de servicio': 0 };
     });
@@ -514,7 +562,8 @@ export default function ReportView() {
         data.range,
         data.readings,
         data.opHours,
-        data.statusHistory
+        data.statusHistory,
+        data.outOfPrograms
       );
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -541,17 +590,23 @@ export default function ReportView() {
       <div id="report-content" className="bg-white p-12 rounded-[2.5rem] border border-slate-200 shadow-xl print:border-none print:shadow-none print:p-0">
 
         {/* Brand Header */}
-        <div className="flex border-b-4 border-blue-600 pb-6 mb-8 items-end justify-between">
-          <div>
-            <span className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border border-blue-100">
-              SQM - Sistema de Gestión de Activos
-            </span>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tighter mt-2">PROGRAMA DE LAVADOS SQM</h1>
-            <p className="text-slate-500 text-xs font-bold font-mono">Control de Lavados DDEE</p>
+        <div className="flex border-b border-slate-200 pb-4 mb-6 items-center justify-between">
+          <div className="flex items-center gap-4">
+            <img
+              src="/logo-sqm.png"
+              alt="SQM Logo"
+              className="h-11 w-11 object-contain shrink-0"
+              referrerPolicy="no-referrer"
+            />
+            <div className="border-l-2 border-slate-200 pl-4">
+              <h1 className="text-lg font-black text-slate-900 tracking-tight leading-tight">Programa de Lavados SQM</h1>
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">Control de Lavados DDEE</p>
+              <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Reporte de Gestión y Eficiencia Operativa</p>
+            </div>
           </div>
           <div className="text-right">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Generado el</p>
-            <p className="text-sm font-bold text-slate-700 mt-1">{format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Generado el</p>
+            <p className="text-xs font-bold text-slate-700 mt-1 font-mono">{format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
           </div>
         </div>
 
@@ -1127,7 +1182,7 @@ export default function ReportView() {
             <Truck className="text-blue-600 shrink-0" size={22} />
             <div>
               <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">4. Disponibilidad y Horas Operativas de Camiones</h2>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Cálculos autorizados sobre camiones operativos CM95, CM97, CM10 y CM49. Se excluye CM58.</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Cálculos autorizados sobre camiones operativos CM95, CM97 y REEMPLAZOS.</p>
             </div>
           </div>
 
@@ -1394,9 +1449,7 @@ export default function ReportView() {
                     <th className="p-3 text-left border-r border-slate-800">Fecha</th>
                     <th className="p-3 text-center border-r border-slate-800">Turno</th>
                     <th className="p-3 text-center border-r border-slate-800">CM95</th>
-                    <th className="p-3 text-center border-r border-slate-800">CM97</th>
-                    <th className="p-3 text-center border-r border-slate-800">CM10</th>
-                    <th className="p-3 text-center border-slate-850">CM49</th>
+                    <th className="p-3 text-center border-slate-850">CM97</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1404,7 +1457,7 @@ export default function ReportView() {
                     <tr key={idx} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition-colors bg-white font-medium">
                       <td className="p-3 border-r border-slate-100 font-bold text-slate-700">{h.date}</td>
                       <td className="p-3 border-r border-slate-100 text-center font-black text-blue-600">{h.shift}</td>
-                      {['CM95', 'CM97', 'CM10', 'CM49'].map(code => {
+                      {['CM95', 'CM97'].map(code => {
                         const s = h.trucks.find(t => t.code === code)?.status || '-';
                         const display = getStatusDisplay(s);
                         return (
