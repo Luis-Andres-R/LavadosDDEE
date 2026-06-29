@@ -27,9 +27,16 @@ export default function ReadingsForm() {
   });
 
   useEffect(() => {
+    if (profile?.assignedShift) {
+      setFormData(prev => ({ ...prev, shift: profile.assignedShift }));
+    }
+  }, [profile]);
+
+  useEffect(() => {
     const unsub = onSnapshot(collection(db, 'trucks'), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckInfo));
-      const activeTrucks = data.filter(t => t.active && WASHING_TRUCKS.includes(t.code) && (t.status === 'En servicio' || t.status === 'Disponible'));
+      // Always include CM95 and CM97 regardless of status or active state, as per guidelines
+      const activeTrucks = data.filter(t => WASHING_TRUCKS.includes(t.code));
       
       const virtualReplacementTruck: TruckInfo = {
         code: 'REEMPLAZO',
@@ -39,10 +46,26 @@ export default function ReadingsForm() {
         updatedBy: 'system'
       };
       
-      const allActive = [...activeTrucks, virtualReplacementTruck];
-      setTrucks(allActive);
-      if (allActive.length > 0 && (!formData.truck || !allActive.some(t => t.code === formData.truck))) {
-        setFormData(p => ({ ...p, truck: allActive[0].code }));
+      const finalTrucks: TruckInfo[] = [];
+      WASHING_TRUCKS.forEach(code => {
+        const found = activeTrucks.find(t => t.code === code);
+        if (found) {
+          finalTrucks.push(found);
+        } else {
+          finalTrucks.push({
+            code,
+            status: 'Disponible',
+            active: true,
+            updatedAt: new Date().toISOString(),
+            updatedBy: 'system'
+          });
+        }
+      });
+      finalTrucks.push(virtualReplacementTruck);
+
+      setTrucks(finalTrucks);
+      if (finalTrucks.length > 0 && (!formData.truck || !finalTrucks.some(t => t.code === formData.truck))) {
+        setFormData(p => ({ ...p, truck: finalTrucks[0].code }));
       }
     });
     return () => unsub();
@@ -155,14 +178,9 @@ export default function ReadingsForm() {
                 <Gauge size={12} className="text-blue-400" />
                 Turno
               </label>
-              <select 
-                value={formData.shift}
-                onChange={e => setFormData(p => ({ ...p, shift: e.target.value as ShiftType }))}
-                className="w-full rounded-xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-bold text-white outline-hidden focus:bg-white/10 focus:border-blue-500"
-              >
-                <option value="T39" className="bg-slate-900">T39</option>
-                <option value="T44" className="bg-slate-900">T44</option>
-              </select>
+              <div className="w-full rounded-xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-bold text-slate-400">
+                {formData.shift}
+              </div>
             </div>
           </div>
           

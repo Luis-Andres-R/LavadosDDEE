@@ -114,7 +114,7 @@ export default function AdminDashboard() {
             active={false} 
             onClick={() => window.open('/dashboard', '_blank')} 
             icon={<BarChart3 size={18} className="text-orange-400" />} 
-            label="Dashboard BI / TV" 
+            label="Dashboard Operacional" 
           />
         </nav>
 
@@ -170,8 +170,8 @@ export default function AdminDashboard() {
               className="flex items-center gap-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-orange-500/30 px-5 py-3 text-sm font-bold text-white shadow-xl hover:bg-slate-800 hover:scale-[1.02] transition-all active:scale-95"
             >
               <BarChart3 size={18} className="text-orange-400 animate-pulse" />
-              <span className="hidden sm:inline">Dashboard BI / TV</span>
-              <span className="sm:hidden">BI</span>
+              <span className="hidden sm:inline">Dashboard Operacional</span>
+              <span className="sm:hidden">DO</span>
             </button>
 
             {activeTab === 'programs' && (

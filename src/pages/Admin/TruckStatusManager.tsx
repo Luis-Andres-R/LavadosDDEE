@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../firebase';
 import { collection, query, onSnapshot, doc, updateDoc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { TruckInfo, INITIAL_TRUCKS, TruckStatus, ShiftType } from '../../types';
-import { Truck, Save, AlertTriangle, CheckCircle2, History, Calendar, Clock, Home, X, CheckCircle } from 'lucide-react';
+import { Truck, Save, AlertTriangle, CheckCircle2, History, Calendar, Clock, Home, X, CheckCircle, Wrench } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +13,7 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedShift, setSelectedShift] = useState<ShiftType>('T39');
   const [pendingChanges, setPendingChanges] = useState<Record<string, TruckStatus>>({});
+  const [workshopDetails, setWorkshopDetails] = useState<Record<string, { entryHour?: string; reason?: string; observation?: string }>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -43,12 +44,21 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
         if (snap.exists()) {
           const historyData = snap.data();
           const changes: Record<string, TruckStatus> = {};
+          const details: Record<string, { entryHour?: string; reason?: string; observation?: string }> = {};
+          
           historyData.trucks.forEach((t: any) => {
             changes[t.code] = t.status;
+            details[t.code] = {
+              entryHour: t.entryHour || '',
+              reason: t.reason || '',
+              observation: t.observation || ''
+            };
           });
           setPendingChanges(changes);
+          setWorkshopDetails(details);
         } else {
           setPendingChanges({});
+          setWorkshopDetails({});
         }
       } catch (e) {
         console.error("Error checking history", e);
@@ -66,7 +76,7 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
         const truckRef = doc(db, 'trucks', code);
         await setDoc(truckRef, {
           code,
-          status: 'Disponible',
+          status: 'Sin Registrar', // Defaulting to Sin Registrar for 1.0 architecture
           active: true,
           updatedAt: serverTimestamp(),
           updatedBy: profile?.email || 'sistema'
@@ -89,17 +99,33 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
     setError(null);
     try {
       const historyId = `${selectedDate}_${selectedShift}`;
-      const historyTrucks: { code: string; status: TruckStatus }[] = [];
+      const historyTrucks: any[] = [];
 
-      // 1. Update individual truck records (Global Status)
+      // 1. Update individual truck records (Global Status) and prepare historical payload
       for (const truck of trucks) {
         const newStatus = pendingChanges[truck.id!] || truck.status;
-        historyTrucks.push({ code: truck.code, status: newStatus });
+        const details = workshopDetails[truck.id!] || {};
+        
+        const payload: any = {
+          code: truck.code,
+          status: newStatus
+        };
+
+        if (newStatus === 'En taller') {
+          payload.entryHour = details.entryHour || '';
+          payload.reason = details.reason || '';
+          payload.observation = details.observation || '';
+        } else {
+          payload.entryHour = '';
+          payload.reason = '';
+          payload.observation = '';
+        }
+
+        historyTrucks.push(payload);
         
         const truckRef = doc(db, 'trucks', truck.id!);
         await setDoc(truckRef, {
-          code: truck.code,
-          status: newStatus,
+          ...payload,
           active: true,
           updatedAt: serverTimestamp(),
           updatedBy: profile?.email || 'admin'
@@ -132,9 +158,12 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
   const getStatusColor = (status: TruckStatus) => {
     switch (status) {
       case 'En servicio': return 'bg-emerald-500 text-white';
-      case 'Fuera de servicio': return 'bg-red-500 text-white';
       case 'Disponible': return 'bg-blue-500 text-white';
-      default: return 'bg-slate-500 text-white';
+      case 'Fuera de servicio': return 'bg-rose-500 text-white';
+      case 'En taller': return 'bg-amber-500 text-white';
+      case 'Sin Registrar':
+      default:
+        return 'bg-slate-400 text-white';
     }
   };
 
@@ -211,8 +240,8 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                         onChange={(e) => setSelectedShift(e.target.value as ShiftType)}
                         className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none appearance-none cursor-pointer"
                       >
-                        <option value="T39">T39</option>
-                        <option value="T44">T44</option>
+                        <option value="T39">T39 (Día)</option>
+                        <option value="T44">T44 (Noche)</option>
                       </select>
                     </div>
                 </div>
@@ -264,14 +293,14 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                                 )}
                             </div>
 
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Seleccionar Estado</label>
-                                <div className="grid grid-cols-1 gap-2">
-                                    {(['En servicio', 'Disponible', 'Fuera de servicio'] as TruckStatus[]).map((st) => (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {(['En servicio', 'Disponible', 'Fuera de servicio', 'En taller', 'Sin Registrar'] as TruckStatus[]).map((st) => (
                                         <button
                                             key={st}
                                             onClick={() => handleStatusChange(truck.id!, st)}
-                                            className={`w-full py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                            className={`py-2 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                                                 currentStatus === st 
                                                 ? 'bg-slate-900 text-white shadow-md' 
                                                 : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
@@ -281,6 +310,67 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                                         </button>
                                     ))}
                                 </div>
+
+                                {/* DYNAMIC WORKSHOP DETAILS FORM (Mejora N.º 7) */}
+                                {currentStatus === 'En taller' && (
+                                  <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+                                    <h4 className="text-[9px] font-black uppercase tracking-wider text-amber-600 flex items-center gap-1">
+                                      <Wrench size={10} /> DETALLE DE INGRESO A TALLER
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div className="space-y-1">
+                                        <label className="text-[8px] font-black text-slate-500 uppercase tracking-wider">Hora de Ingreso</label>
+                                        <input 
+                                          type="time"
+                                          value={workshopDetails[truck.id!]?.entryHour || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setWorkshopDetails(prev => ({
+                                              ...prev,
+                                              [truck.id!]: { ...prev[truck.id!], entryHour: val }
+                                            }));
+                                            handleStatusChange(truck.id!, 'En taller');
+                                          }}
+                                          className="w-full bg-white border border-slate-200 px-2 py-1.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-[8px] font-black text-slate-500 uppercase tracking-wider">Motivo</label>
+                                        <input 
+                                          type="text"
+                                          placeholder="Ej: Falla mecánica"
+                                          value={workshopDetails[truck.id!]?.reason || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setWorkshopDetails(prev => ({
+                                              ...prev,
+                                              [truck.id!]: { ...prev[truck.id!], reason: val }
+                                            }));
+                                            handleStatusChange(truck.id!, 'En taller');
+                                          }}
+                                          className="w-full bg-white border border-slate-200 px-2 py-1.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 placeholder-slate-400"
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-wider">Observación</label>
+                                      <textarea 
+                                        placeholder="Ingrese observaciones técnicas..."
+                                        rows={2}
+                                        value={workshopDetails[truck.id!]?.observation || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setWorkshopDetails(prev => ({
+                                            ...prev,
+                                            [truck.id!]: { ...prev[truck.id!], observation: val }
+                                          }));
+                                          handleStatusChange(truck.id!, 'En taller');
+                                        }}
+                                        className="w-full bg-white border border-slate-200 px-2 py-1.5 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-amber-500 placeholder-slate-400"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
                             </div>
 
                             <div className="mt-6 flex items-center justify-between">

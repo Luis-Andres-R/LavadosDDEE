@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import { WashingProgram, OutOfProgramWashing, TruckInfo, TruckStatus } from '../../types';
+import { WashingProgram, OutOfProgramWashing, TruckInfo, TruckStatus, ShiftType } from '../../types';
 import { format, subDays, parseISO } from 'date-fns';
+import { calculateBacklogMetrics } from '../../data/backlogCatalog';
 import { 
   TrendingUp, 
   Activity, 
@@ -15,17 +16,31 @@ import {
   ArrowUpRight,
   Info,
   RefreshCw,
-  Award
+  Award,
+  User,
+  Wrench,
+  Search,
+  CheckCircle
 } from 'lucide-react';
+
+const getDefaultShift = (): ShiftType => {
+  const hour = new Date().getHours();
+  return (hour >= 8 && hour < 20) ? 'T39' : 'T44';
+};
 
 export default function DashboardBI() {
   const [loading, setLoading] = useState(true);
   const [washingPrograms, setWashingPrograms] = useState<WashingProgram[]>([]);
   const [outOfProgramWashings, setOutOfProgramWashings] = useState<OutOfProgramWashing[]>([]);
+  const [statusHistory, setStatusHistory] = useState<any[]>([]);
   const [trucks, setTrucks] = useState<TruckInfo[]>([]);
   const [currentTime, setCurrentTime] = useState<string>(format(new Date(), 'HH:mm:ss'));
   const [lastUpdated, setLastUpdated] = useState<string>(format(new Date(), 'HH:mm:ss'));
   const [hoveredPoint, setHoveredPoint] = useState<{ name: string; value: number; x: number; y: number } | null>(null);
+
+  // Filter Selectors for Dashboard active viewing
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedShift, setSelectedShift] = useState<ShiftType>(getDefaultShift());
 
   // Clock ticks every second
   useEffect(() => {
@@ -70,6 +85,16 @@ export default function DashboardBI() {
       (err) => console.error("Error loading trucks:", err)
     );
 
+    const unsubHistory = onSnapshot(
+      query(collection(db, 'truckStatusHistory')),
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setStatusHistory(data);
+        setLastUpdated(format(new Date(), 'HH:mm:ss'));
+      },
+      (err) => console.error("Error loading status history:", err)
+    );
+
     // Auto-refresh every 60 seconds as requested
     const intervalFallback = setInterval(() => {
       setLastUpdated(format(new Date(), 'HH:mm:ss'));
@@ -79,6 +104,7 @@ export default function DashboardBI() {
       unsubPrograms();
       unsubOutOfProgram();
       unsubTrucks();
+      unsubHistory();
       clearInterval(intervalFallback);
     };
   }, []);
@@ -115,13 +141,80 @@ export default function DashboardBI() {
     return { programmed, completed, pending };
   };
 
-  // KPI Calculations
-  const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
   const currentMonthPrefix = useMemo(() => format(new Date(), 'yyyy-MM'), []);
 
+  // Dynamic Backlog metrics calculation (100% automated)
+  const backlogStats = useMemo(() => {
+    return calculateBacklogMetrics(washingPrograms);
+  }, [washingPrograms]);
+
+  // Extract supervisor / operator info for Header for active Date/Shift
+  const headerOperationDetails = useMemo(() => {
+    const dayProgs = washingPrograms.filter(
+      p => p.date === selectedDate && p.shift === selectedShift && p.status !== 'PLANIFICADO'
+    );
+
+    const supervisors = Array.from(new Set(dayProgs.map(p => p.createdBy).filter(Boolean)));
+    const operators = Array.from(new Set(dayProgs.map(p => {
+      if (p.washingOperator === 'REEMPLAZO' && p.replacementOperatorName) {
+        return `${p.replacementOperatorName} (R)`;
+      }
+      return p.washingOperator;
+    }).filter(Boolean)));
+
+    return {
+      supervisor: supervisors.length > 0 ? supervisors.join(', ') : 'Sin encargado',
+      operator: operators.length > 0 ? operators.join(', ') : 'Sin operador asignado'
+    };
+  }, [washingPrograms, selectedDate, selectedShift]);
+
+  // Dynamic fleet list for active Date/Shift
+  const activeFleet = useMemo(() => {
+    // CM95 & CM97 are always permanent
+    const permanent = ['CM95', 'CM97'];
+    
+    // Find active replacement trucks for selected date/shift
+    const dayProgs = washingPrograms.filter(
+      p => p.date === selectedDate && p.shift === selectedShift && p.status !== 'PLANIFICADO'
+    );
+    const replacementTags = new Set<string>();
+    dayProgs.forEach(p => {
+      if (p.truck === 'REEMPLAZO' && p.replacementTruckTag) {
+        replacementTags.add(p.replacementTruckTag.toUpperCase());
+      }
+    });
+
+    const list = [...permanent, ...Array.from(replacementTags)];
+    
+    // Lookup status in truckStatusHistory
+    const historyId = `${selectedDate}_${selectedShift}`;
+    const record = statusHistory.find(h => h.id === historyId);
+
+    return list.map(code => {
+      const savedInfo = record?.trucks?.find((t: any) => t.code === code);
+      if (savedInfo) {
+        return {
+          code,
+          status: savedInfo.status as TruckStatus,
+          entryHour: savedInfo.entryHour,
+          reason: savedInfo.reason,
+          observation: savedInfo.observation
+        };
+      }
+      // If not registered yet, default to "Sin Registrar"
+      return {
+        code,
+        status: 'Sin Registrar' as TruckStatus
+      };
+    });
+  }, [washingPrograms, statusHistory, selectedDate, selectedShift]);
+
   const stats = useMemo(() => {
-    // 1. Today's stats
-    const todayPrograms = washingPrograms.filter(p => p.date === todayStr);
+    // CRITICAL REQUIREMENT: Filter out all 'PLANIFICADO' programs for adherence/compliance KPIs
+    const activePrograms = washingPrograms.filter(p => p.status !== 'PLANIFICADO');
+
+    // 1. Selected day stats
+    const todayPrograms = activePrograms.filter(p => p.date === selectedDate && p.shift === selectedShift);
     let todayProgrammed = 0;
     let todayCompleted = 0;
     let todayPending = 0;
@@ -138,7 +231,7 @@ export default function DashboardBI() {
       : 0;
 
     // 2. Monthly stats
-    const monthlyPrograms = washingPrograms.filter(p => p.date && p.date.startsWith(currentMonthPrefix));
+    const monthlyPrograms = activePrograms.filter(p => p.date && p.date.startsWith(currentMonthPrefix));
     let monthProgrammed = 0;
     let monthCompleted = 0;
     let monthPending = 0;
@@ -155,23 +248,10 @@ export default function DashboardBI() {
       : 0;
 
     // 3. Out of program stats
-    const todayOOP = outOfProgramWashings.filter(w => w.date === todayStr).length;
+    const todayOOP = outOfProgramWashings.filter(w => w.date === selectedDate && w.shift === selectedShift).length;
     const monthOOP = outOfProgramWashings.filter(w => w.date && w.date.startsWith(currentMonthPrefix)).length;
 
-    // 4. Trucks Status - specifically for CM95 and CM97
-    const validTruckCodes = ['CM95', 'CM97'];
-    const truckStatusMap: Record<string, TruckStatus> = {
-      CM95: 'Disponible',
-      CM97: 'Disponible'
-    };
-
-    trucks.forEach(t => {
-      if (validTruckCodes.includes(t.code)) {
-        truckStatusMap[t.code] = t.status;
-      }
-    });
-
-    // 5. Line Chart SVG Data: Evolution of the last 30 days
+    // 4. Line Chart SVG Data: Evolution of the last 30 days
     const last30DaysRaw = [];
     let maxDailyCompleted = 0;
     for (let i = 29; i >= 0; i--) {
@@ -179,7 +259,7 @@ export default function DashboardBI() {
       const dStr = format(d, 'yyyy-MM-dd');
       const dLabel = format(d, 'dd/MM');
 
-      const dayPrograms = washingPrograms.filter(p => p.date === dStr);
+      const dayPrograms = activePrograms.filter(p => p.date === dStr);
       let dayCompleted = 0;
       dayPrograms.forEach(p => {
         const { completed } = getProgramStructures(p);
@@ -197,7 +277,7 @@ export default function DashboardBI() {
       });
     }
 
-    // 6. Bar Chart: Advance by Area (Current Month)
+    // 5. Bar Chart: Advance by Area (Current Month)
     const areas = [
       'Equipos críticos CS',
       'Interior planta CS',
@@ -230,11 +310,10 @@ export default function DashboardBI() {
       };
     });
 
-    // 7. Table Summary: Last 10 days with activity
+    // 6. Table Summary: Last 8 days with activity
     const summaryTableMap: Record<string, { date: string, programmed: number, completed: number, pending: number, oop: number }> = {};
     
-    // Add programs
-    washingPrograms.forEach(p => {
+    activePrograms.forEach(p => {
       if (!p.date) return;
       const { programmed, completed, pending } = getProgramStructures(p);
       if (!summaryTableMap[p.date]) {
@@ -245,7 +324,6 @@ export default function DashboardBI() {
       summaryTableMap[p.date].pending += pending;
     });
 
-    // Add OOP count
     outOfProgramWashings.forEach(w => {
       if (!w.date) return;
       if (!summaryTableMap[w.date]) {
@@ -276,14 +354,13 @@ export default function DashboardBI() {
       monthCompliance,
       todayOOP,
       monthOOP,
-      truckStatuses: truckStatusMap,
       last30DaysRaw,
       maxDailyCompleted: maxDailyCompleted || 1,
       areaChartData,
       maxAreaValue: maxAreaValue || 1,
       summaryTableData
     };
-  }, [washingPrograms, outOfProgramWashings, trucks, todayStr, currentMonthPrefix]);
+  }, [washingPrograms, outOfProgramWashings, selectedDate, selectedShift, currentMonthPrefix]);
 
   const getStatusColor = (status: TruckStatus) => {
     switch (status) {
@@ -292,15 +369,19 @@ export default function DashboardBI() {
         return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
       case 'Fuera de servicio':
         return 'bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      case 'En taller':
+        return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+      case 'Sin Registrar':
       default:
-        return 'bg-amber-500/10 text-amber-400 border border-[#f59e0b]/20';
+        return 'bg-slate-500/10 text-slate-400 border border-slate-500/20';
     }
   };
 
   const getStatusText = (status: TruckStatus) => {
     if (status === 'Disponible' || status === 'En servicio') return 'DISPONIBLE';
     if (status === 'Fuera de servicio') return 'MANTENCIÓN';
-    return 'STANDBY';
+    if (status === 'En taller') return 'EN TALLER';
+    return 'SIN REGISTRAR';
   };
 
   // Render SVG points of evolution line chart
@@ -344,7 +425,7 @@ export default function DashboardBI() {
   return (
     <div className="min-h-screen w-full bg-[#0b0f19] text-slate-100 p-6 flex flex-col justify-between font-sans selection:bg-orange-500/30 selection:text-white">
       {/* HEADER SECTION */}
-      <header className="flex flex-col md:flex-row items-center justify-between border-b border-slate-800/80 pb-4 mb-5 gap-4">
+      <header className="flex flex-col md:flex-row items-center justify-between border-b border-slate-800/80 pb-4 mb-4 gap-4">
         <div className="flex items-center gap-4">
           <img 
             src="/logo-sqm.png" 
@@ -358,8 +439,32 @@ export default function DashboardBI() {
             </h1>
             <p className="text-xs font-bold text-orange-500 uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
-              BI Dashboard Operacional de TV
+              Dashboard Operacional v1.0
             </p>
+          </div>
+        </div>
+
+        {/* Real-time selectors */}
+        <div className="flex flex-wrap items-center gap-3 bg-slate-900/40 border border-slate-800/80 p-2 rounded-2xl">
+          <div className="flex items-center gap-2 px-3 border-r border-slate-800">
+            <Calendar size={14} className="text-orange-500" />
+            <input 
+              type="date" 
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-transparent text-xs font-black text-white focus:outline-none cursor-pointer"
+            />
+          </div>
+          <div className="flex items-center gap-2 px-2">
+            <Clock size={14} className="text-orange-500" />
+            <select 
+              value={selectedShift}
+              onChange={(e) => setSelectedShift(e.target.value as ShiftType)}
+              className="bg-transparent text-xs font-black text-white focus:outline-none cursor-pointer"
+            >
+              <option value="T39">T39 (Día)</option>
+              <option value="T44">T44 (Noche)</option>
+            </select>
           </div>
         </div>
 
@@ -373,22 +478,66 @@ export default function DashboardBI() {
           <div className="h-5 w-px bg-slate-800"></div>
           <div className="flex items-center gap-2">
             <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" style={{ animationDuration: '6s' }} />
-            <span className="text-xs font-bold text-slate-400 uppercase">Última actualización:</span>
+            <span className="text-xs font-bold text-slate-400 uppercase">Actualizado:</span>
             <span className="text-xs font-black text-slate-300 font-mono">{lastUpdated}</span>
           </div>
         </div>
       </header>
 
-      {/* KPI GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5 shrink-0">
+      {/* NEW MEJORA N.º 7: EXECUTED ROLE & TIME HEADER PANELS */}
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5 bg-slate-950/40 border border-slate-800/50 p-4 rounded-2xl shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-orange-500/10 text-orange-500 border border-orange-500/15">
+            <Calendar size={16} />
+          </div>
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Fecha Operación</span>
+            <p className="text-sm font-black text-white">{format(parseISO(selectedDate), 'dd / MMMM / yyyy')}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/15">
+            <Clock size={16} />
+          </div>
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Turno Seleccionado</span>
+            <p className="text-sm font-black text-white">{selectedShift === 'T39' ? 'T39 — Diurno (08:00 - 20:00)' : 'T44 — Nocturno (20:00 - 08:00)'}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/15">
+            <Award size={16} />
+          </div>
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Encargado del Programa</span>
+            <p className="text-sm font-black text-white truncate max-w-[200px]" title={headerOperationDetails.supervisor}>
+              {headerOperationDetails.supervisor}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/15">
+            <User size={16} />
+          </div>
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Operador de Lavado</span>
+            <p className="text-sm font-black text-white truncate max-w-[200px]" title={headerOperationDetails.operator}>
+              {headerOperationDetails.operator}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* KPI GRID WITH DYNAMIC BACKLOG */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5 shrink-0">
         {/* KPI 1: Cumplimiento de Hoy */}
         <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
           <div className="space-y-2">
-            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">CUMPLIMIENTO HOY</p>
+            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">CUMPLIMIENTO TURNO</p>
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-black tracking-tighter text-white font-mono">{stats.todayCompliance}%</span>
               <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full flex items-center gap-0.5">
-                <ArrowUpRight size={10} /> Diario
+                <ArrowUpRight size={10} /> Turno
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 pt-1">
@@ -477,13 +626,61 @@ export default function DashboardBI() {
           </div>
         </div>
 
-        {/* KPI 3: Fuera de Programa */}
+        {/* NEW MEJORA N.º 8: KPI 3: Backlog Operacional Inteligente */}
+        <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">BACKLOG OPERACIONAL</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-black tracking-tighter text-fuchsia-400 font-mono">{Math.round(backlogStats.percentage)}%</span>
+              <span className="text-[10px] font-bold text-fuchsia-400 bg-fuchsia-500/10 px-2.5 py-0.5 rounded-full flex items-center gap-0.5">
+                <CheckCircle size={10} /> Avance
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 pt-1">
+              <div>Catálogo: <span className="font-bold text-slate-200 font-mono text-sm">{backlogStats.total}</span></div>
+              <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+              <div>Recup: <span className="font-bold text-fuchsia-400 font-mono text-sm">{backlogStats.recovered}</span></div>
+              <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
+              <div>Pend: <span className="font-bold text-orange-400 font-mono text-sm">{backlogStats.pending}</span></div>
+            </div>
+          </div>
+          {/* Circular Progress Indicator */}
+          <div className="relative w-20 h-20 shrink-0">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+              <circle
+                className="text-slate-800"
+                strokeWidth="3.5"
+                stroke="currentColor"
+                fill="none"
+                cx="18"
+                cy="18"
+                r="15.9155"
+              />
+              <circle
+                className="text-fuchsia-500 transition-all duration-1000 ease-out"
+                strokeDasharray={`${backlogStats.percentage}, 100`}
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                stroke="currentColor"
+                fill="none"
+                cx="18"
+                cy="18"
+                r="15.9155"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Activity className="w-7 h-7 text-fuchsia-400 animate-pulse" />
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 4: Fuera de Programa */}
         <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
           <div className="space-y-2">
             <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">FUERA DE PROGRAMA</p>
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-black tracking-tighter text-orange-500 font-mono">{stats.todayOOP}</span>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Hoy</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Registros</span>
             </div>
             <div className="text-xs font-semibold text-slate-400 pt-1">
               Acumulado del mes actual: <span className="font-black text-orange-400 text-sm font-mono ml-1">{stats.monthOOP}</span>
@@ -498,36 +695,52 @@ export default function DashboardBI() {
 
       {/* MID SECTION: CHARTS & TRUCK STATUSES */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-5 flex-1 min-h-0">
-        {/* Left Column: Trucks Operational Status */}
+        {/* Left Column: Trucks Operational Status - MEJORA N.º 7: ESTADO EN TALLER & REEMPLAZO AUTOMATIZADO */}
         <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl xl:h-full">
           <div>
             <div className="flex items-center gap-2 mb-4">
               <Truck className="w-5 h-5 text-orange-500" />
-              <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">MONITOR DE CAMIONES</h2>
+              <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">ESTADO DE FLOTA DIARIA</h2>
             </div>
-            <div className="space-y-3">
-              {Object.entries(stats.truckStatuses).map(([code, statusUnknown]) => {
-                const status = statusUnknown as TruckStatus;
+            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+              {activeFleet.map((truck) => {
+                const status = truck.status;
+                const showWorkshopDetails = status === 'En taller' && (truck.entryHour || truck.reason || truck.observation);
+                
                 return (
                   <div 
-                    key={code} 
-                    className="bg-slate-950/60 border border-slate-800/40 p-3 rounded-2xl flex items-center justify-between shadow-sm transition-all duration-300 hover:border-slate-700"
+                    key={truck.code} 
+                    className="bg-slate-950/60 border border-slate-800/40 p-3 rounded-2xl flex flex-col gap-2 shadow-sm transition-all duration-300 hover:border-slate-700"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center font-bold text-slate-200 text-xs tracking-tight select-none">
-                        {code}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center font-bold text-slate-200 text-xs tracking-tight select-none">
+                          {truck.code}
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-extrabold text-white">Camión de Lavado</h4>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Módulos DDEE</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-xs font-extrabold text-white">Camión de Lavado</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Módulos DDEE</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${status === 'Disponible' || status === 'En servicio' ? 'bg-emerald-500 animate-pulse' : status === 'En taller' ? 'bg-amber-500 animate-pulse' : status === 'Sin Registrar' ? 'bg-slate-500' : 'bg-rose-500'}`}></span>
+                        <span className={`text-[9px] font-black tracking-wider px-2.5 py-1 rounded-full ${getStatusColor(status)}`}>
+                          {getStatusText(status)}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${status === 'Disponible' || status === 'En servicio' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
-                      <span className={`text-[10px] font-black tracking-wider px-2.5 py-1 rounded-full ${getStatusColor(status)}`}>
-                        {getStatusText(status)}
-                      </span>
-                    </div>
+
+                    {/* EN TALLER DETAIL BOX */}
+                    {showWorkshopDetails && (
+                      <div className="mt-1 bg-slate-900/80 border border-amber-500/25 p-2 rounded-xl text-[10px] space-y-1 text-slate-300">
+                        <div className="flex items-center justify-between text-[9px] font-black text-amber-400 uppercase tracking-wider">
+                          <span className="flex items-center gap-1"><Wrench size={10} /> DETALLE TALLER</span>
+                          {truck.entryHour && <span>Ingreso: {truck.entryHour}</span>}
+                        </div>
+                        {truck.reason && <p className="font-extrabold text-slate-200">Motivo: <span className="font-medium text-slate-300">{truck.reason}</span></p>}
+                        {truck.observation && <p className="leading-relaxed italic text-slate-400 font-medium">Obs: "{truck.observation}"</p>}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -583,7 +796,7 @@ export default function DashboardBI() {
                 strokeLinejoin="round"
               />
 
-              {/* Interactive interactive nodes */}
+              {/* Interactive nodes */}
               {lineChartPoints.points.map((pt, i) => (
                 <g key={i}>
                   <circle 

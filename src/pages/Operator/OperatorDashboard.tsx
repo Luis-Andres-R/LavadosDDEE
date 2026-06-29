@@ -104,6 +104,7 @@ export default function OperatorDashboard() {
   const [updateTime, setUpdateTime] = useState(format(new Date(), 'HH:mm'));
   const [updateOperator, setUpdateOperator] = useState('Beltrán Cuello');
   const [updateTruck, setUpdateTruck] = useState('CM95');
+  const [updateReplacementTruckTag, setUpdateReplacementTruckTag] = useState('');
   const [updateObs, setUpdateObs] = useState('');
 
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -178,6 +179,7 @@ export default function OperatorDashboard() {
       setUpdateDate(format(new Date(), 'yyyy-MM-dd'));
       setUpdateTime(format(new Date(), 'HH:mm'));
       setUpdateTruck(selectedOutOfProgramToUpdate.truck || 'CM95');
+      setUpdateReplacementTruckTag(selectedOutOfProgramToUpdate.replacementTruckTag || '');
       setUpdateObs(selectedOutOfProgramToUpdate.observation || '');
     }
   }, [selectedOutOfProgramToUpdate]);
@@ -206,6 +208,17 @@ export default function OperatorDashboard() {
         updateData.completedTime = updateTime;
         updateData.washingOperator = updateOperator;
         updateData.truck = updateTruck;
+        if (updateTruck === 'REEMPLAZO') {
+          if (!updateReplacementTruckTag.trim()) {
+            alert("Por favor ingrese el tag del camión de reemplazo.");
+            return;
+          }
+          updateData.replacementTruckTag = updateReplacementTruckTag.trim().toUpperCase();
+          updateData.displayTruckName = `${updateReplacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+        } else {
+          updateData.replacementTruckTag = '';
+          updateData.displayTruckName = updateTruck;
+        }
         updateData.completedAt = new Date().toISOString();
       }
 
@@ -626,43 +639,6 @@ export default function OperatorDashboard() {
       {/* Program List */}
       <div className="px-6 py-8 space-y-6">
         
-        {/* Shift Filter selector tabs */}
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          <button
-            type="button"
-            onClick={() => setSelectedShift('all')}
-            className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
-              selectedShift === 'all'
-                ? 'bg-white text-blue-600 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            Todos
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedShift('T39')}
-            className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
-              selectedShift === 'T39'
-                ? 'bg-white text-blue-600 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            T39
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedShift('T44')}
-            className={`flex-1 py-2 text-center text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
-              selectedShift === 'T44'
-                ? 'bg-white text-blue-600 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            T44
-          </button>
-        </div>
-
         {/* Date scope tab toggles */}
         <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
           <button
@@ -1193,7 +1169,7 @@ export default function OperatorDashboard() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-505 uppercase tracking-wider block">Camión (CM95/CM97)</label>
+                        <label className="text-[10px] font-bold text-slate-505 uppercase tracking-wider block">Camión Utilizado</label>
                         <select
                           value={updateTruck}
                           onChange={e => setUpdateTruck(e.target.value)}
@@ -1201,9 +1177,24 @@ export default function OperatorDashboard() {
                         >
                           <option value="CM95">CM95</option>
                           <option value="CM97">CM97</option>
+                          <option value="REEMPLAZO">REEMPLAZO</option>
                         </select>
                       </div>
                     </div>
+
+                    {updateTruck === 'REEMPLAZO' && (
+                      <div className="space-y-1 animate-fade-in mt-2">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500">Tag del camión de reemplazo *</label>
+                        <input 
+                          type="text"
+                          required
+                          value={updateReplacementTruckTag}
+                          onChange={e => setUpdateReplacementTruckTag(e.target.value.toUpperCase())}
+                          placeholder="Ej. CM102"
+                          className="w-full rounded-2xl border border-amber-350 bg-amber-50/20 py-3 px-4 text-sm font-bold text-slate-705 focus:bg-white focus:border-indigo-505 outline-hidden transition-all uppercase font-mono"
+                        />
+                      </div>
+                    )}
                   </>
                 ) : null}
 
@@ -1570,20 +1561,9 @@ function OutOfProgramModal({
 
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Turno</label>
-            {operatorShift ? (
-              <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 py-3 px-4 text-sm font-black text-slate-600">
-                Turno {operatorShift}
-              </div>
-            ) : (
-              <select 
-                value={formData.shift}
-                onChange={e => setFormData(p => ({ ...p, shift: e.target.value as ShiftType }))}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 px-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-indigo-600 transition-all"
-              >
-                <option value="T39">T39</option>
-                <option value="T44">T44</option>
-              </select>
-            )}
+            <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 py-3 px-4 text-sm font-black text-slate-600">
+              Turno {formData.shift}
+            </div>
           </div>
 
           <div className="space-y-1">

@@ -78,7 +78,7 @@ export default function ReportView() {
   let totalEstructurasRealizadas = 0;
   let totalEstructurasPendientes = 0;
 
-  programs.forEach(p => {
+  programs.filter(p => p.status !== 'PLANIFICADO').forEach(p => {
     const { programmed, completed, pending } = getProgramStructures(p);
     totalEstructurasProgramadas += programmed;
     totalEstructurasRealizadas += completed;
@@ -147,7 +147,7 @@ export default function ReportView() {
         let dayOperational = 12;
 
         if (truck === 'CM95' || truck === 'CM97') {
-          // Check if status is "Fuera de servicio" during this day
+          // Check if status is "Fuera de servicio" or "En taller" during this day
           const statusRecord = statusHistory.find(h => h.date === date && h.shift === 'T39') || statusHistory.find(h => h.date === date);
           const truckStatus = statusRecord?.trucks?.find(t => t.code === truck)?.status;
 
@@ -159,6 +159,19 @@ export default function ReportView() {
             if (!summary[truck].reasons.includes(label)) {
               summary[truck].reasons.push(label);
             }
+          } else if (truckStatus === 'En taller') {
+            dayExpected = 12;
+            dayDeducted = 12;
+            dayOperational = 0;
+            const label = 'En taller';
+            if (!summary[truck].reasons.includes(label)) {
+              summary[truck].reasons.push(label);
+            }
+          } else if (truckStatus === 'Sin Registrar') {
+            // "Sin Registrar" doesn't penalize during the turn
+            dayExpected = 12;
+            dayDeducted = 0;
+            dayOperational = 12;
           } else {
             // Check if there are failure hours logged in operatingHours
             const failure = opHours.find(h => h.date === date && h.truck === truck);
@@ -216,7 +229,7 @@ export default function ReportView() {
     const summary: Record<string, Record<string, number>> = {};
     const validTrucks = ['CM95', 'CM97'];
     validTrucks.forEach(code => {
-      summary[code] = { 'En servicio': 0, 'Disponible': 0, 'Fuera de servicio': 0 };
+      summary[code] = { 'En servicio': 0, 'Disponible': 0, 'Fuera de servicio': 0, 'En taller': 0, 'Sin Registrar': 0 };
     });
 
     statusHistory.forEach(h => {
@@ -236,8 +249,10 @@ export default function ReportView() {
   const getStatusDisplay = (s: string) => {
     switch (s) {
       case 'En servicio': return { text: 'SERV', icon: '✅', color: 'bg-emerald-50 text-emerald-700', border: 'border-emerald-200' };
-      case 'Disponible': return { text: 'DIPS', icon: '🟠', color: 'bg-amber-50 text-amber-700', border: 'border-amber-200' };
+      case 'Disponible': return { text: 'DISP', icon: '🟠', color: 'bg-amber-50 text-amber-700', border: 'border-amber-200' };
       case 'Fuera de servicio': return { text: 'F/S', icon: '❌', color: 'bg-red-50 text-red-700', border: 'border-red-200' };
+      case 'En taller': return { text: 'TALL', icon: '🔧', color: 'bg-orange-50 text-orange-700', border: 'border-orange-200' };
+      case 'Sin Registrar': return { text: 'S/REG', icon: '⚪', color: 'bg-slate-50 text-slate-400', border: 'border-slate-200' };
       default: return { text: '-', icon: '', color: 'bg-slate-50 text-slate-400', border: 'border-slate-100' };
     }
   };

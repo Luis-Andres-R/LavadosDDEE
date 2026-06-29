@@ -3,7 +3,7 @@ import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'fire
 import { db, auth } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { ShiftType, WASHING_OPERATORS, TruckInfo, WASHING_TRUCKS } from '../../types';
-import { X, Calendar, Clock, MapPin, User, Truck, Info, CheckSquare, Layers } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, User, Truck, Info, CheckSquare, Layers, BookOpen } from 'lucide-react';
 import { INITIAL_WASHING_TEMPLATES, WashingTemplate } from '../../data/washingTemplates';
 
 enum OperationType {
@@ -76,7 +76,8 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
     washingOperator: WASHING_OPERATORS[0],
     truck: WASHING_TRUCKS[0],
     replacementTruckTag: '',
-    adminObservation: ''
+    adminObservation: '',
+    status: 'Pendiente' as 'Pendiente' | 'PLANIFICADO'
   });
 
   useEffect(() => {
@@ -182,7 +183,7 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
           washingOperator: formData.washingOperator,
           truck: formData.truck,
           adminObservation: formData.adminObservation,
-          status: 'Pendiente',
+          status: formData.status,
           closed: false,
           createdAt: serverTimestamp(),
           createdBy: profile?.email || auth.currentUser?.email || 'unknown',
@@ -406,6 +407,23 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
                   {['CM95', 'CM97', 'REEMPLAZO'].map(code => (
                     <option key={code} value={code}>{code}</option>
                   ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Program Status Selection */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Estado de Programación</label>
+              <div className="relative">
+                <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                <select
+                  required
+                  value={formData.status}
+                  onChange={e => setFormData(p => ({ ...p, status: e.target.value as any }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 transition-all"
+                >
+                  <option value="Pendiente">Pendiente (Ejecución inmediata)</option>
+                  <option value="PLANIFICADO">PLANIFICADO (Planificación avanzada)</option>
                 </select>
               </div>
             </div>

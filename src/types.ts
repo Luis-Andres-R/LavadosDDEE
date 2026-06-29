@@ -30,7 +30,7 @@ export const WASHING_OPERATORS = [
   'Eduardo Rojas'
 ];
 
-export type TruckStatus = 'En servicio' | 'Fuera de servicio' | 'Disponible';
+export type TruckStatus = 'En servicio' | 'Fuera de servicio' | 'Disponible' | 'En taller' | 'Sin Registrar';
 
 export interface TruckInfo {
   id?: string;
@@ -39,6 +39,9 @@ export interface TruckInfo {
   active: boolean;
   updatedAt: any;
   updatedBy: string;
+  entryHour?: string;
+  reason?: string;
+  observation?: string;
 }
 
 export const INITIAL_TRUCKS = ['CM95', 'CM97'];
@@ -107,6 +110,8 @@ export interface WashingProgram {
   // Reemplazo fields
   replacementTruckTag?: string;
   displayTruckName?: string;
+  replacementOperatorName?: string;
+  displayOperatorName?: string;
 }
 
 export interface WashingRecord {
@@ -204,7 +209,13 @@ export interface TruckStatusHistory {
   id?: string;
   date: string;
   shift: ShiftType;
-  trucks: { code: string; status: TruckStatus }[];
+  trucks: { 
+    code: string; 
+    status: TruckStatus;
+    entryHour?: string;
+    reason?: string;
+    observation?: string;
+  }[];
   savedAt: any;
   savedBy: string;
 }
