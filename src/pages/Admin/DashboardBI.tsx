@@ -41,6 +41,46 @@ export default function DashboardBI() {
   // Filter Selectors for Dashboard active viewing
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [selectedShift, setSelectedShift] = useState<ShiftType>(getDefaultShift());
+  const [hasSetDefaultShift, setHasSetDefaultShift] = useState(false);
+
+  // Dynamically set default shift based on recent activity or active programming
+  useEffect(() => {
+    if (washingPrograms.length > 0 && !hasSetDefaultShift) {
+      const detectActiveShift = (programs: WashingProgram[]): ShiftType => {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        
+        // 1. Try to find the latest program that has actually been worked/activated (status !== 'Pendiente') up to today
+        const workedPrograms = programs.filter(p => p.status !== 'Pendiente' && p.date <= todayStr);
+        if (workedPrograms.length > 0) {
+          const sorted = [...workedPrograms].sort((a, b) => {
+            if (a.date !== b.date) {
+              return b.date.localeCompare(a.date);
+            }
+            return b.shift.localeCompare(a.shift);
+          });
+          return sorted[0].shift;
+        }
+        
+        // 2. Try to find the latest scheduled program up to today
+        const scheduledPrograms = programs.filter(p => p.date <= todayStr);
+        if (scheduledPrograms.length > 0) {
+          const sorted = [...scheduledPrograms].sort((a, b) => {
+            if (a.date !== b.date) {
+              return b.date.localeCompare(a.date);
+            }
+            return b.shift.localeCompare(a.shift);
+          });
+          return sorted[0].shift;
+        }
+        
+        return getDefaultShift();
+      };
+
+      const activeShift = detectActiveShift(washingPrograms);
+      setSelectedShift(activeShift);
+      setHasSetDefaultShift(true);
+    }
+  }, [washingPrograms, hasSetDefaultShift]);
 
   // Clock ticks every second
   useEffect(() => {
@@ -208,6 +248,24 @@ export default function DashboardBI() {
       };
     });
   }, [washingPrograms, statusHistory, selectedDate, selectedShift]);
+
+  // Find current day/shift operation status in statusHistory
+  const currentDayOperation = useMemo(() => {
+    const historyId = `${selectedDate}_${selectedShift}`;
+    const record = statusHistory.find(h => h.id === historyId);
+    if (record) {
+      return {
+        status: record.operationStatus || 'Operativa',
+        reason: record.suspensionReason || '',
+        observation: record.suspensionObservation || ''
+      };
+    }
+    return {
+      status: 'Operativa',
+      reason: '',
+      observation: ''
+    };
+  }, [statusHistory, selectedDate, selectedShift]);
 
   const stats = useMemo(() => {
     // CRITICAL REQUIREMENT: Filter out all 'PLANIFICADO' programs for adherence/compliance KPIs
@@ -462,8 +520,8 @@ export default function DashboardBI() {
               onChange={(e) => setSelectedShift(e.target.value as ShiftType)}
               className="bg-transparent text-xs font-black text-white focus:outline-none cursor-pointer"
             >
-              <option value="T39">T39 (Día)</option>
-              <option value="T44">T44 (Noche)</option>
+              <option value="T39" className="bg-slate-950">T39</option>
+              <option value="T44" className="bg-slate-950">T44</option>
             </select>
           </div>
         </div>
@@ -485,7 +543,7 @@ export default function DashboardBI() {
       </header>
 
       {/* NEW MEJORA N.º 7: EXECUTED ROLE & TIME HEADER PANELS */}
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5 bg-slate-950/40 border border-slate-800/50 p-4 rounded-2xl shrink-0">
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5 bg-slate-950/40 border border-slate-800/50 p-4 rounded-2xl shrink-0">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-orange-500/10 text-orange-500 border border-orange-500/15">
             <Calendar size={16} />
@@ -493,26 +551,6 @@ export default function DashboardBI() {
           <div>
             <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Fecha Operación</span>
             <p className="text-sm font-black text-white">{format(parseISO(selectedDate), 'dd / MMMM / yyyy')}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/15">
-            <Clock size={16} />
-          </div>
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Turno Seleccionado</span>
-            <p className="text-sm font-black text-white">{selectedShift === 'T39' ? 'T39 — Diurno (08:00 - 20:00)' : 'T44 — Nocturno (20:00 - 08:00)'}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/15">
-            <Award size={16} />
-          </div>
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Encargado del Programa</span>
-            <p className="text-sm font-black text-white truncate max-w-[200px]" title={headerOperationDetails.supervisor}>
-              {headerOperationDetails.supervisor}
-            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -527,6 +565,29 @@ export default function DashboardBI() {
           </div>
         </div>
       </section>
+
+      {/* PRIORITARY SUSPENSION ALERT */}
+      {currentDayOperation.status === 'Suspendida' && (
+        <div className="mb-5 bg-amber-500/10 border border-amber-500/30 text-amber-200 px-6 py-4 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/20 shrink-0">
+              <AlertTriangle className="w-5 h-5 animate-bounce" style={{ animationDuration: '3s' }} />
+            </div>
+            <div>
+              <h4 className="text-sm font-black uppercase tracking-wider text-amber-400">Jornada Suspendida</h4>
+              <p className="text-xs text-slate-300 font-medium mt-0.5">
+                Motivo: <span className="font-bold text-white">{currentDayOperation.reason}</span>
+                {currentDayOperation.observation && (
+                  <span className="text-slate-400 italic ml-2">({currentDayOperation.observation})</span>
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/15 self-start sm:self-auto">
+            Sin Operación Registrada
+          </div>
+        </div>
+      )}
 
       {/* KPI GRID WITH DYNAMIC BACKLOG */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5 shrink-0">
@@ -637,11 +698,11 @@ export default function DashboardBI() {
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 pt-1">
-              <div>Catálogo: <span className="font-bold text-slate-200 font-mono text-sm">{backlogStats.total}</span></div>
+              <div>Total por lavar: <span className="font-bold text-slate-200 font-mono text-sm">{backlogStats.total}</span></div>
               <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
-              <div>Recup: <span className="font-bold text-fuchsia-400 font-mono text-sm">{backlogStats.recovered}</span></div>
+              <div>Lavadas: <span className="font-bold text-fuchsia-400 font-mono text-sm">{backlogStats.recovered}</span></div>
               <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
-              <div>Pend: <span className="font-bold text-orange-400 font-mono text-sm">{backlogStats.pending}</span></div>
+              <div>Pendientes: <span className="font-bold text-orange-400 font-mono text-sm">{backlogStats.pending}</span></div>
             </div>
           </div>
           {/* Circular Progress Indicator */}
@@ -696,13 +757,13 @@ export default function DashboardBI() {
       {/* MID SECTION: CHARTS & TRUCK STATUSES */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-5 flex-1 min-h-0">
         {/* Left Column: Trucks Operational Status - MEJORA N.º 7: ESTADO EN TALLER & REEMPLAZO AUTOMATIZADO */}
-        <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl xl:h-full">
+        <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl xl:h-full">
           <div>
             <div className="flex items-center gap-2 mb-4">
               <Truck className="w-5 h-5 text-orange-500" />
               <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">ESTADO DE FLOTA DIARIA</h2>
             </div>
-            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
               {activeFleet.map((truck) => {
                 const status = truck.status;
                 const showWorkshopDetails = status === 'En taller' && (truck.entryHour || truck.reason || truck.observation);
@@ -755,12 +816,57 @@ export default function DashboardBI() {
           </div>
         </div>
 
-        {/* Middle Column (2x span): Line Chart SVG (30 Days Evolution) */}
-        <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl">
+        {/* Middle-Right Column: Custom Area Bar Chart */}
+        <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl">
+          <div className="flex items-center gap-2 mb-4 shrink-0">
+            <Calendar className="w-5 h-5 text-sky-400" />
+            <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">AVANCE POR ÁREAS (MES)</h2>
+          </div>
+
+          <div className="flex-1 flex flex-col justify-between space-y-3.5">
+            {stats.areaChartData.map((row, idx) => {
+              const maxVal = Math.max(row.programmed, row.completed);
+              const complianceRate = row.programmed > 0 ? Math.round((row.completed / row.programmed) * 100) : 0;
+              
+              return (
+                <div key={idx} className="bg-slate-950/40 border border-slate-800/30 p-2.5 rounded-2xl">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-[10px] font-black text-slate-300 truncate tracking-wide max-w-[160px]" title={row.areaMatch}>
+                      {row.areaMatch}
+                    </span>
+                    <span className="text-[10px] font-black font-mono text-sky-400">{complianceRate}%</span>
+                  </div>
+
+                  {/* Horizontal Bar visualization */}
+                  <div className="relative w-full h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-800 flex items-center">
+                    {/* Programmed block (gray background bar) */}
+                    <div 
+                      className="absolute left-0 top-0 h-full bg-slate-800 rounded-full"
+                      style={{ width: `${Math.min(100, stats.maxAreaValue > 0 ? (row.programmed / stats.maxAreaValue) * 100 : 0)}%` }}
+                    />
+                    {/* Realized bar (overlapping glowing cyan) */}
+                    <div 
+                      className="absolute left-0 top-0 h-full bg-cyan-500 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.4)] transition-all duration-500"
+                      style={{ width: `${Math.min(100, stats.maxAreaValue > 0 ? (row.completed / stats.maxAreaValue) * 100 : 0)}%` }}
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-bold">
+                    <span>Prog: <strong className="text-slate-400 font-mono">{row.programmed}</strong></span>
+                    <span>Realizado: <strong className="text-cyan-400 font-mono">{row.completed}</strong></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Column (1x span): Line Chart SVG (30 Days Evolution) - Secondary Supporting Graph */}
+        <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl">
           <div className="flex items-center justify-between mb-2 shrink-0">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-emerald-400" />
-              <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">TENDENCIA DIARIA DE LAVADOS (ÚLTIMOS 30 DÍAS)</h2>
+              <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">TENDENCIA</h2>
             </div>
             <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-950 px-2.5 py-1 rounded-lg">Realizado</span>
           </div>
@@ -851,55 +957,9 @@ export default function DashboardBI() {
             {/* X-axis days markers */}
             <div className="flex justify-between text-[9px] text-slate-500 font-extrabold px-5 mt-2 select-none">
               <span>{stats.last30DaysRaw[0]?.label}</span>
-              <span>{stats.last30DaysRaw[10]?.label}</span>
-              <span>{stats.last30DaysRaw[20]?.label}</span>
-              <span className="text-emerald-400 font-black">{stats.last30DaysRaw[29]?.label} (Hoy)</span>
+              <span>{stats.last30DaysRaw[14]?.label}</span>
+              <span className="text-emerald-400 font-black">{stats.last30DaysRaw[29]?.label}</span>
             </div>
-          </div>
-        </div>
-
-        {/* Right Column: Custom Area Bar Chart */}
-        <div className="bg-slate-900/80 border border-slate-800/60 rounded-3xl p-5 flex flex-col justify-between shadow-xl">
-          <div className="flex items-center gap-2 mb-4 shrink-0">
-            <Calendar className="w-5 h-5 text-sky-400" />
-            <h2 className="text-xs font-black tracking-widest text-slate-200 uppercase">AVANCE POR ÁREAS (MES)</h2>
-          </div>
-
-          <div className="flex-1 flex flex-col justify-between space-y-3.5">
-            {stats.areaChartData.map((row, idx) => {
-              const maxVal = Math.max(row.programmed, row.completed);
-              const complianceRate = row.programmed > 0 ? Math.round((row.completed / row.programmed) * 100) : 0;
-              
-              return (
-                <div key={idx} className="bg-slate-950/40 border border-slate-800/30 p-2.5 rounded-2xl">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-[10px] font-black text-slate-300 truncate tracking-wide max-w-[160px]" title={row.areaMatch}>
-                      {row.areaMatch}
-                    </span>
-                    <span className="text-[10px] font-black font-mono text-sky-400">{complianceRate}%</span>
-                  </div>
-
-                  {/* Horizontal Bar visualization */}
-                  <div className="relative w-full h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-800 flex items-center">
-                    {/* Programmed block (gray background bar) */}
-                    <div 
-                      className="absolute left-0 top-0 h-full bg-slate-800 rounded-full"
-                      style={{ width: `${Math.min(100, stats.maxAreaValue > 0 ? (row.programmed / stats.maxAreaValue) * 100 : 0)}%` }}
-                    />
-                    {/* Realized bar (overlapping glowing cyan) */}
-                    <div 
-                      className="absolute left-0 top-0 h-full bg-cyan-500 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.4)] transition-all duration-500"
-                      style={{ width: `${Math.min(100, stats.maxAreaValue > 0 ? (row.completed / stats.maxAreaValue) * 100 : 0)}%` }}
-                    />
-                  </div>
-
-                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-bold">
-                    <span>Prog: <strong className="text-slate-400 font-mono">{row.programmed}</strong></span>
-                    <span>Realizado: <strong className="text-cyan-400 font-mono">{row.completed}</strong></span>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       </div>

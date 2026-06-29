@@ -111,6 +111,54 @@ export default function OperatorDashboard() {
   const [selectedShift, setSelectedShift] = useState<ShiftType | 'all'>('all');
   const [tab, setTab] = useState<'today' | 'pending' | 'out_of_program'>('today');
   
+  const [statusHistory, setStatusHistory] = useState<any[]>([]);
+
+  // Find current day/shift operation status in statusHistory
+  const currentDayOperation = useMemo(() => {
+    if (selectedShift === 'all') {
+      const hist39 = statusHistory.find(h => h.id === `${selectedDate}_T39`);
+      const hist44 = statusHistory.find(h => h.id === `${selectedDate}_T44`);
+      
+      const suspended39 = hist39?.operationStatus === 'Suspendida';
+      const suspended44 = hist44?.operationStatus === 'Suspendida';
+      
+      if (suspended39 && suspended44) {
+        return {
+          status: 'Suspendida' as const,
+          reason: `${hist39.suspensionReason} (T39) / ${hist44.suspensionReason} (T44)`,
+          observation: `${hist39.suspensionObservation || ''} ${hist44.suspensionObservation || ''}`.trim()
+        };
+      } else if (suspended39) {
+        return {
+          status: 'Suspendida' as const,
+          reason: `${hist39.suspensionReason} (T39)`,
+          observation: hist39.suspensionObservation || ''
+        };
+      } else if (suspended44) {
+        return {
+          status: 'Suspendida' as const,
+          reason: `${hist44.suspensionReason} (T44)`,
+          observation: hist44.suspensionObservation || ''
+        };
+      }
+    } else {
+      const historyId = `${selectedDate}_${selectedShift}`;
+      const record = statusHistory.find(h => h.id === historyId);
+      if (record) {
+        return {
+          status: (record.operationStatus || 'Operativa') as 'Operativa' | 'Suspendida',
+          reason: record.suspensionReason || '',
+          observation: record.suspensionObservation || ''
+        };
+      }
+    }
+    return {
+      status: 'Operativa' as const,
+      reason: '',
+      observation: ''
+    };
+  }, [statusHistory, selectedDate, selectedShift]);
+
   const [pwaOnline, setPwaOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -151,6 +199,14 @@ export default function OperatorDashboard() {
       console.error("Error fetching outOfProgramWashings:", error);
     });
 
+    // Fetch truck status history
+    const unsubscribeHistory = onSnapshot(collection(db, 'truckStatusHistory'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setStatusHistory(data);
+    }, (error) => {
+      console.error("Error fetching truck status history in operator dashboard:", error);
+    });
+
     // Fetch active trucks
     const fetchTrucks = async () => {
       try {
@@ -168,6 +224,7 @@ export default function OperatorDashboard() {
     return () => {
       unsubscribe();
       unsubscribeOutOfProg();
+      unsubscribeHistory();
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -638,6 +695,27 @@ export default function OperatorDashboard() {
 
       {/* Program List */}
       <div className="px-6 py-8 space-y-6">
+
+        {currentDayOperation.status === 'Suspendida' && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-900 px-6 py-4 rounded-3xl shadow-sm flex flex-col gap-2">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-2xl bg-amber-100 text-amber-600 shrink-0 mt-0.5 animate-pulse">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-amber-800">Atención: Jornada Suspendida</h4>
+                <p className="text-[11px] text-slate-700 font-bold mt-0.5 leading-relaxed">
+                  Esta jornada se encuentra suspendida. Motivo principal: <span className="text-slate-900 font-black">{currentDayOperation.reason}</span>.
+                </p>
+                {currentDayOperation.observation && (
+                  <p className="text-[10px] text-slate-500 italic mt-1 font-medium bg-amber-100/30 p-2 rounded-xl border border-amber-100/50">
+                    "{currentDayOperation.observation}"
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Date scope tab toggles */}
         <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
@@ -662,7 +740,7 @@ export default function OperatorDashboard() {
                 : 'bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <span className="text-[9px] uppercase tracking-wider text-center leading-tight">Deudas</span>
+            <span className="text-[9px] uppercase tracking-wider text-center leading-tight">Por lavar</span>
             <span className="text-sm leading-none mt-1 font-mono">{pendingPrograms.length}</span>
           </button>
           <button
@@ -686,7 +764,7 @@ export default function OperatorDashboard() {
                 <div>
                   <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Hoja de Ruta</h2>
                   <p className="text-sm font-black text-slate-900 mt-0.5">
-                      {tab === 'today' ? 'Tareas programadas hoy' : 'Deudas operacionales acumuladas'}
+                      {tab === 'today' ? 'Tareas programadas hoy' : 'Tareas por lavar acumuladas'}
                   </p>
                 </div>
               </div>

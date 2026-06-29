@@ -39,7 +39,11 @@ export default function ReportView() {
     );
   }
 
-  const { programs, readings, opHours, statusHistory, outOfPrograms = [], type, range, selectedShift = 'Todos' } = data;
+  const { programs, readings, opHours, statusHistory = [], outOfPrograms = [], type, range, selectedShift = 'Todos' } = data;
+
+  const suspendedWorkdays = useMemo(() => {
+    return (statusHistory || []).filter(h => h.operationStatus === 'Suspendida');
+  }, [statusHistory]);
 
   // Helper to calculate structures/equipments for a WashingProgram based on checklist/cantidad
   const getProgramStructures = (p: WashingProgram) => {
@@ -330,6 +334,11 @@ export default function ReportView() {
       let count = 0;
       
       dayReadings.forEach(r => {
+        const isSuspendedDay = statusHistory?.some(
+          h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+        );
+        if (isSuspendedDay) return;
+
         let tankReading: any = null;
         if (tankKey === 'TKA') tankReading = r.readings.TKA;
         else if (tankKey === 'TKC') tankReading = r.readings.TKC;
@@ -561,6 +570,51 @@ export default function ReportView() {
             })}
           </svg>
         </div>
+
+        {/* Tabla resumen con los datos utilizados para construir el gráfico */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-[7px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Datos del Gráfico</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[8px] border-collapse bg-slate-50/50 rounded-lg overflow-hidden border border-slate-150">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-200 text-slate-700">
+                  <th className="py-1 px-1.5 text-left font-bold font-mono">Fecha</th>
+                  {seriesList.map(ser => (
+                    <th key={ser.key} className="py-1 px-1.5 text-right font-bold" style={{ color: ser.color }}>
+                      {ser.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-bold font-mono">
+                {chartDays.map((day, dIdx) => {
+                  const hasAnyValue = seriesList.some(ser => {
+                    const dObj = day.tanks[ser.key];
+                    const val = valueType === 'us' ? dObj.us : dObj.temp;
+                    return dObj.has && val !== null;
+                  });
+
+                  if (!hasAnyValue) return null;
+
+                  return (
+                    <tr key={dIdx} className="hover:bg-slate-100/30">
+                      <td className="py-1 px-1.5 text-slate-500">{day.date}</td>
+                      {seriesList.map(ser => {
+                        const dObj = day.tanks[ser.key];
+                        const val = valueType === 'us' ? dObj.us : dObj.temp;
+                        return (
+                          <td key={ser.key} className="py-1 px-1.5 text-right text-slate-800">
+                            {val !== null ? `${val} ${unit}` : '-'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     );
   };
@@ -650,6 +704,61 @@ export default function ReportView() {
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hoja Ejecutiva General &bull; SQM Control DDEE</p>
             </div>
           </div>
+
+          {/* JORNADA SUSPENDIDA HEADER ALERT (Diario) */}
+          {type === 'diario' && suspendedWorkdays.length > 0 && (
+            <div className="mb-6 bg-amber-50 border border-amber-300 text-amber-900 px-6 py-4 rounded-3xl shadow-sm flex items-center justify-between gap-4 animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-600 shrink-0">
+                  <AlertTriangle className="w-5 h-5 animate-bounce" style={{ animationDuration: '3s' }} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-800">Jornada Suspendida</h4>
+                  <p className="text-[11px] text-slate-700 font-bold mt-0.5">
+                    Motivo: <span className="text-slate-900 font-black">{suspendedWorkdays[0].suspensionReason}</span>
+                    {suspendedWorkdays[0].suspensionObservation && (
+                      <span className="text-slate-500 italic ml-2">({suspendedWorkdays[0].suspensionObservation})</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-amber-700 bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
+                Sin Operación
+              </div>
+            </div>
+          )}
+
+          {/* RESUMEN DE JORNADAS SUSPENDIDAS (Rango de Fechas) */}
+          {type !== 'diario' && suspendedWorkdays.length > 0 && (
+            <div className="mb-6 border border-amber-200 bg-amber-50/20 p-5 rounded-3xl">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="text-amber-500 shrink-0" size={16} />
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-800">Resumen de Jornadas Suspendidas en el Periodo</h4>
+              </div>
+              <div className="overflow-hidden border border-amber-150 rounded-2xl bg-white">
+                <table className="w-full text-[9px] text-center border-collapse">
+                  <thead>
+                    <tr className="bg-amber-500/10 text-amber-800 font-mono font-black uppercase">
+                      <th className="p-2 text-left pl-4">Fecha</th>
+                      <th className="p-2">Turno</th>
+                      <th className="p-2">Motivo Principal</th>
+                      <th className="p-2 text-right pr-4">Observaciones/Detalles</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100 font-bold text-slate-700">
+                    {suspendedWorkdays.map((s, idx) => (
+                      <tr key={idx} className="hover:bg-amber-50/10">
+                        <td className="p-2 text-left font-mono pl-4">{s.date}</td>
+                        <td className="p-2 text-amber-700 font-mono">{s.shift}</td>
+                        <td className="p-2 text-slate-900">{s.suspensionReason}</td>
+                        <td className="p-2 text-right pr-4 text-slate-500 italic font-medium">{s.suspensionObservation || 'Sin observaciones'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Indicators Row */}
           <div className="grid grid-cols-4 gap-4 mb-8">
@@ -1004,6 +1113,58 @@ export default function ReportView() {
                     "temp",
                     "°C"
                   )}
+                </div>
+
+                {/* Resumen de Niveles de Agua (%) para Hoja 1 */}
+                <div className="mt-6 border-t border-slate-100 pt-5">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Resumen de Niveles de Agua (%) Registrados</p>
+                  <table className="w-full text-[9px] border-collapse bg-slate-50/30 rounded-xl overflow-hidden border border-slate-200 text-center">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-mono uppercase">
+                        <th className="p-2 text-left border-r border-slate-800">Fecha</th>
+                        <th className="p-2 border-r border-slate-800">Turno</th>
+                        <th className="p-2 border-r border-slate-800">TKA Nivel</th>
+                        <th className="p-2 border-r border-slate-800">TKC Nivel</th>
+                        <th className="p-2 border-r border-slate-800">TKE Nivel</th>
+                        <th className="p-2 border-r border-slate-800">Agua Pot. Nivel</th>
+                        <th className="p-2">Nivel Camión</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono font-bold">
+                      {readings.map((r, idx) => {
+                        const tkeReading = r.readings.TKE || r.readings.TKD;
+                        const truckReading = r.readings.truckTank;
+                        const isSuspendedDay = statusHistory?.some(
+                          h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+                        );
+                        return (
+                          <tr key={idx} className="hover:bg-slate-100/40 bg-white">
+                            <td className="p-2 border-r border-slate-100 text-left text-slate-700">{r.date}</td>
+                            <td className="p-2 border-r border-slate-100 text-blue-600">{r.shift}</td>
+                            <td className="p-2 border-r border-slate-100 text-slate-800">
+                              {isSuspendedDay ? '—' : (r.readings.TKA?.level ?? '-')}
+                              {!isSuspendedDay && r.readings.TKA?.level !== undefined && r.readings.TKA?.level !== '' && '%'}
+                            </td>
+                            <td className="p-2 border-r border-slate-100 text-slate-800">
+                              {isSuspendedDay ? '—' : (r.readings.TKC?.level ?? '-')}
+                              {!isSuspendedDay && r.readings.TKC?.level !== undefined && r.readings.TKC?.level !== '' && '%'}
+                            </td>
+                            <td className="p-2 border-r border-slate-100 text-slate-800">
+                              {isSuspendedDay ? '—' : (tkeReading?.level ?? '-')}
+                              {!isSuspendedDay && tkeReading?.level !== undefined && tkeReading?.level !== '' && '%'}
+                            </td>
+                            <td className="p-2 border-r border-slate-100 text-slate-800">
+                              {isSuspendedDay ? '—' : (r.readings.potableWater?.level ?? '-')}
+                              {!isSuspendedDay && r.readings.potableWater?.level !== undefined && r.readings.potableWater?.level !== '' && '%'}
+                            </td>
+                            <td className="p-2 text-indigo-700 font-black">
+                              {isSuspendedDay ? '—' : (truckReading?.level ? `${truckReading.level}%` : '-')}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -1434,16 +1595,33 @@ export default function ReportView() {
                   {data.readings.map((r, idx) => {
                     const tkeReading = r.readings.TKE || r.readings.TKD;
                     const truckReading = r.readings.truckTank;
+                    const isSuspendedDay = statusHistory?.some(
+                      h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+                    );
                     return (
                       <tr key={idx} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition-colors bg-white font-mono text-center">
                         <td className="p-3 border-r border-slate-100 text-left font-bold text-slate-700">{r.date}</td>
                         <td className="p-3 border-r border-slate-100 font-bold text-blue-600">{r.shift}</td>
                         <td className="p-3 border-r border-slate-100 font-bold text-slate-500">{r.truck}</td>
-                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/20">{r.readings.TKA?.level ?? '-'}%</td>
-                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/40">{r.readings.TKC?.level ?? '-'}%</td>
-                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/20">{tkeReading?.level ?? '-'}%</td>
-                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/40">{r.readings.potableWater?.level ?? '-'}%</td>
-                        <td className="p-3 font-black text-indigo-700 bg-slate-50/20">{truckReading?.level ? `${truckReading.level}%` : '-'}</td>
+                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/20">
+                          {isSuspendedDay ? '—' : (r.readings.TKA?.level ?? '-')}
+                          {!isSuspendedDay && r.readings.TKA?.level !== undefined && r.readings.TKA?.level !== '' && '%'}
+                        </td>
+                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/40">
+                          {isSuspendedDay ? '—' : (r.readings.TKC?.level ?? '-')}
+                          {!isSuspendedDay && r.readings.TKC?.level !== undefined && r.readings.TKC?.level !== '' && '%'}
+                        </td>
+                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/20">
+                          {isSuspendedDay ? '—' : (tkeReading?.level ?? '-')}
+                          {!isSuspendedDay && tkeReading?.level !== undefined && tkeReading?.level !== '' && '%'}
+                        </td>
+                        <td className="p-3 border-r border-slate-100 font-black text-slate-800 bg-slate-50/40">
+                          {isSuspendedDay ? '—' : (r.readings.potableWater?.level ?? '-')}
+                          {!isSuspendedDay && r.readings.potableWater?.level !== undefined && r.readings.potableWater?.level !== '' && '%'}
+                        </td>
+                        <td className="p-3 font-black text-indigo-700 bg-slate-50/20">
+                          {isSuspendedDay ? '—' : (truckReading?.level ? `${truckReading.level}%` : '-')}
+                        </td>
                       </tr>
                     );
                   })}

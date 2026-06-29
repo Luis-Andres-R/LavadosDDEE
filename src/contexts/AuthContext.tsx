@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               uid: user.uid,
               email: user.email || lowerEmail,
               role: predefined.role,
-              displayName: predefined.displayName,
+              displayName: user.displayName || predefined.displayName,
               assignedShift: predefined.assignedShift,
               active: true
             };

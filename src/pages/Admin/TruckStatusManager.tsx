@@ -14,6 +14,10 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
   const [selectedShift, setSelectedShift] = useState<ShiftType>('T39');
   const [pendingChanges, setPendingChanges] = useState<Record<string, TruckStatus>>({});
   const [workshopDetails, setWorkshopDetails] = useState<Record<string, { entryHour?: string; reason?: string; observation?: string }>>({});
+  const [operationStatus, setOperationStatus] = useState<'Operativa' | 'Suspendida'>('Operativa');
+  const [suspensionReason, setSuspensionReason] = useState<string>('');
+  const [suspensionObservation, setSuspensionObservation] = useState<string>('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -56,9 +60,17 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
           });
           setPendingChanges(changes);
           setWorkshopDetails(details);
+          setOperationStatus(historyData.operationStatus || 'Operativa');
+          setSuspensionReason(historyData.suspensionReason || '');
+          setSuspensionObservation(historyData.suspensionObservation || '');
+          setHasUnsavedChanges(false);
         } else {
           setPendingChanges({});
           setWorkshopDetails({});
+          setOperationStatus('Operativa');
+          setSuspensionReason('');
+          setSuspensionObservation('');
+          setHasUnsavedChanges(false);
         }
       } catch (e) {
         console.error("Error checking history", e);
@@ -138,11 +150,15 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
         date: selectedDate,
         shift: selectedShift,
         trucks: historyTrucks,
+        operationStatus,
+        suspensionReason: operationStatus === 'Suspendida' ? suspensionReason : '',
+        suspensionObservation: operationStatus === 'Suspendida' && suspensionReason === 'Otro' ? suspensionObservation : '',
         savedAt: serverTimestamp(),
         savedBy: profile?.email || 'admin'
       });
       
       setPendingChanges({});
+      setHasUnsavedChanges(false);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (e) {
@@ -153,7 +169,7 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
     }
   };
 
-  const hasChanges = Object.keys(pendingChanges).length > 0;
+  const hasChanges = Object.keys(pendingChanges).length > 0 || hasUnsavedChanges;
 
   const getStatusColor = (status: TruckStatus) => {
     switch (status) {
@@ -208,8 +224,8 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                     <Truck size={20} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-black text-slate-900 tracking-tight">Estado de Camiones</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Gestión de Disponibilidad Flota</p>
+                    <h3 className="text-lg font-black text-slate-900 tracking-tight">Estado de Camiones y Jornada</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Gestión de Disponibilidad Flota y Operación Diaria</p>
                 </div>
             </div>
 
@@ -260,9 +276,95 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                     ) : (
                         <Save size={16} />
                     )}
-                    {saving ? 'Guardando...' : 'Guardar estados de camiones'}
+                    {saving ? 'Guardando...' : 'Guardar estados y jornada'}
                 </button>
             </div>
+        </div>
+
+        {/* Nuevo bloque: Operación de la Jornada */}
+        <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-6 mb-8">
+          <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-4 flex items-center gap-2">
+            <Calendar size={16} className="text-blue-500" />
+            Operación de la Jornada
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Estado Operativo de la Jornada</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOperationStatus('Operativa');
+                    setHasUnsavedChanges(true);
+                  }}
+                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                    operationStatus === 'Operativa'
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full ${operationStatus === 'Operativa' ? 'bg-white animate-pulse' : 'bg-emerald-500'}`} />
+                  Operativa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOperationStatus('Suspendida');
+                    setHasUnsavedChanges(true);
+                  }}
+                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                    operationStatus === 'Suspendida'
+                      ? 'bg-amber-600 text-white shadow-lg shadow-amber-100'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full ${operationStatus === 'Suspendida' ? 'bg-white animate-pulse' : 'bg-amber-500'}`} />
+                  Suspendida
+                </button>
+              </div>
+            </div>
+
+            {operationStatus === 'Suspendida' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Motivo de Suspensión</label>
+                  <select
+                    value={suspensionReason}
+                    onChange={(e) => {
+                      setSuspensionReason(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    <option value="">-- Seleccionar Motivo --</option>
+                    <option value="Falla de camión">Falla de camión</option>
+                    <option value="Capacitación">Capacitación</option>
+                    <option value="Reunión operacional">Reunión operacional</option>
+                    <option value="Condiciones climáticas">Condiciones climáticas</option>
+                    <option value="Emergencia">Emergencia</option>
+                    <option value="Mantención">Mantención</option>
+                    <option value="Otro">Otro</option>
+                  </select>
+                </div>
+
+                {suspensionReason === 'Otro' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Observación de Suspensión</label>
+                    <input
+                      type="text"
+                      placeholder="Escriba el motivo detallado..."
+                      value={suspensionObservation}
+                      onChange={(e) => {
+                        setSuspensionObservation(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {loading ? (

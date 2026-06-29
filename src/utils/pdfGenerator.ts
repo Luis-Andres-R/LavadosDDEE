@@ -164,8 +164,28 @@ export const generatePDFReport = async (
     ];
   });
 
+  let tableStartY = 95;
+  const suspendedDays = (statusHistory || []).filter(h => h.operationStatus === 'Suspendida');
+  if (suspendedDays.length > 0) {
+    doc.setTextColor(217, 119, 6); // Amber-600
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Jornadas Suspendidas en el Periodo:', 15, 95);
+    
+    let offset = 0;
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85); // Slate 700
+    suspendedDays.forEach((sd) => {
+      const lineText = `- Fecha: ${sd.date} | Turno: ${sd.shift} | Motivo: ${sd.suspensionReason}${sd.suspensionObservation ? ` (${sd.suspensionObservation})` : ''}`;
+      doc.text(lineText, 17, 100 + offset);
+      offset += 4.5;
+    });
+    tableStartY = 103 + offset;
+  }
+
   doc.autoTable({
-    startY: 95,
+    startY: tableStartY,
     head: [['Fecha', 'Línea', 'Tramo', 'Cant.', 'Real.', 'Estado', 'Operador', 'Camión', 'Nota/Incidencia']],
     body: tableData,
     headStyles: { fillColor: [37, 99, 235] },
@@ -390,6 +410,15 @@ export const generatePDFReport = async (
     doc.text('Registro de Temperaturas y Conductividad', 15, finalY);
     
     const readingsTable = readings.map(r => {
+      const isSuspendedDay = statusHistory?.some(
+        h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+      );
+      if (isSuspendedDay) {
+        return [
+          r.date, r.shift, r.truck,
+          '—', '—', '—', '—', '—'
+        ];
+      }
       const tkeReading = r.readings.TKE || r.readings.TKD || { us: 0, temperature: 0, level: 0 };
       const truckTankStr = r.readings.truckTank && r.readings.truckTank.us ? `${r.readings.truckTank.us} / ${r.readings.truckTank.temperature} / ${r.readings.truckTank.level}%` : '-';
       return [

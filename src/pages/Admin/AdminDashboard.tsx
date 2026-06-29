@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { format } from 'date-fns';
 import { 
   BarChart3, 
   ClipboardList, 
@@ -9,7 +10,6 @@ import {
   Filter, 
   FileText, 
   Search,
-  Bell,
   User as UserIcon,
   ChevronRight,
   TrendingUp,
@@ -39,6 +39,7 @@ export default function AdminDashboard() {
   const { logout, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'programs' | 'catalog' | 'reports' | 'readings' | 'trucks' | 'hours' | 'outOfProgram'>('programs');
   const [showProgramForm, setShowProgramForm] = useState(false);
+  const [currentTime, setCurrentTime] = useState<string>(format(new Date(), 'dd/MM/yyyy HH:mm:ss'));
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -47,6 +48,13 @@ export default function AdminDashboard() {
     notPerformed: 0,
     percentage: 0
   });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(format(new Date(), 'dd/MM/yyyy HH:mm:ss'));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, 'washingPrograms'));
@@ -102,7 +110,7 @@ export default function AdminDashboard() {
             active={activeTab === 'trucks'} 
             onClick={() => setActiveTab('trucks')} 
             icon={<Truck size={18} />} 
-            label="Estado Camiones" 
+            label="Estado Camiones y Jornada" 
           />
           <SidebarLink 
             active={activeTab === 'outOfProgram'} 
@@ -157,13 +165,14 @@ export default function AdminDashboard() {
           
           <div className="flex items-center gap-6">
             <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
                 <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Servidor Sincronizado</span>
             </div>
             
-            <button className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-600 transition-colors border border-slate-100">
-              <Bell size={20} />
-            </button>
+            <div className="hidden md:flex items-center gap-2 bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-100 text-slate-600">
+              <Clock size={14} className="text-slate-400" />
+              <span className="text-xs font-black font-mono">{currentTime}</span>
+            </div>
             
             <button 
               onClick={() => window.open('/dashboard', '_blank')}
@@ -190,7 +199,7 @@ export default function AdminDashboard() {
           {/* Stats Bar */}
           {activeTab === 'programs' && (
             <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard label="Ejecución Hoy" value={stats.total} icon={<TrendingUp />} color="blue" subtext={`${stats.total - stats.pending} Avances`} />
+              <StatCard label="Programadas hoy" value={stats.total} icon={<TrendingUp />} color="blue" subtext={`${stats.total - stats.pending} Avances`} />
               <StatCard label="Completados" value={stats.complete} icon={<CheckCircle2 />} color="emerald" subtext={`${stats.percentage.toFixed(1)}% Cumplimiento`} />
               <StatCard label="Parciales" value={stats.partial} icon={<Clock />} color="amber" subtext="Estado en curso" />
               <StatCard label="No Realizados" value={stats.notPerformed} icon={<XCircle />} color="red" subtext="Requiere revisión" />

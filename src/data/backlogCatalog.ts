@@ -55,8 +55,8 @@ export function calculateBacklogMetrics(programs: any[]): BacklogMetrics {
   const recoveredSet = new Set<string>();
 
   programs.forEach(program => {
-    // We check programs that have checklist items
-    if (program.controlType === 'checklist' && Array.isArray(program.items)) {
+    // We check programs that have checklist items and are from version 1.0 onwards (date >= '2026-06-29')
+    if (program.date >= '2026-06-29' && program.controlType === 'checklist' && Array.isArray(program.items)) {
       program.items.forEach((item: any) => {
         if (item.done && BACKLOG_STRUCTURES.includes(item.itemName)) {
           recoveredSet.add(item.itemName);
