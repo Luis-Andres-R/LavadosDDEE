@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { WashingProgram, OperationalReading, TruckOperatingHours, TruckStatusHistory, INITIAL_TRUCKS, OutOfProgramWashing } from '../../types';
 import { format } from 'date-fns';
 import { generatePDFReport } from '../../utils/pdfGenerator';
@@ -42,7 +42,10 @@ export default function ReportView() {
   const { programs, readings, opHours, statusHistory = [], outOfPrograms = [], type, range, selectedShift = 'Todos' } = data;
 
   const suspendedWorkdays = useMemo(() => {
-    return (statusHistory || []).filter(h => h.operationStatus === 'Suspendida');
+    return (statusHistory || []).filter(h => {
+      const status = h.operationStatus || 'En ejecución';
+      return status !== 'En ejecución' && status !== 'Operativa';
+    });
   }, [statusHistory]);
 
   // Helper to calculate structures/equipments for a WashingProgram based on checklist/cantidad
@@ -335,7 +338,7 @@ export default function ReportView() {
       
       dayReadings.forEach(r => {
         const isSuspendedDay = statusHistory?.some(
-          h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+          h => h.date === r.date && h.shift === r.shift && h.operationStatus !== 'En ejecución' && h.operationStatus !== 'Operativa'
         );
         if (isSuspendedDay) return;
 
@@ -1135,7 +1138,7 @@ export default function ReportView() {
                         const tkeReading = r.readings.TKE || r.readings.TKD;
                         const truckReading = r.readings.truckTank;
                         const isSuspendedDay = statusHistory?.some(
-                          h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+                          h => h.date === r.date && h.shift === r.shift && h.operationStatus !== 'En ejecución' && h.operationStatus !== 'Operativa'
                         );
                         return (
                           <tr key={idx} className="hover:bg-slate-100/40 bg-white">
@@ -1596,7 +1599,7 @@ export default function ReportView() {
                     const tkeReading = r.readings.TKE || r.readings.TKD;
                     const truckReading = r.readings.truckTank;
                     const isSuspendedDay = statusHistory?.some(
-                      h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+                      h => h.date === r.date && h.shift === r.shift && h.operationStatus !== 'En ejecución' && h.operationStatus !== 'Operativa'
                     );
                     return (
                       <tr key={idx} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition-colors bg-white font-mono text-center">

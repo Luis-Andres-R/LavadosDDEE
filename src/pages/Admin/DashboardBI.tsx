@@ -20,7 +20,8 @@ import {
   User,
   Wrench,
   Search,
-  CheckCircle
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 
 const getDefaultShift = (): ShiftType => {
@@ -254,15 +255,26 @@ export default function DashboardBI() {
     const historyId = `${selectedDate}_${selectedShift}`;
     const record = statusHistory.find(h => h.id === historyId);
     if (record) {
+      let statusValue = record.operationStatus || 'En ejecución';
+      if (statusValue === 'Operativa') {
+        statusValue = 'En ejecución';
+      } else if (statusValue === 'Suspendida') {
+        const oldReason = record.suspensionReason || '';
+        if (oldReason.toLowerCase().includes('camión') || oldReason.toLowerCase().includes('camion')) {
+          statusValue = 'Suspendido por falta de camión';
+        } else if (oldReason.toLowerCase().includes('clima') || oldReason.toLowerCase().includes('climática')) {
+          statusValue = 'Suspendido por condiciones climáticas';
+        } else {
+          statusValue = 'Suspendido por contingencia operacional';
+        }
+      }
       return {
-        status: record.operationStatus || 'Operativa',
-        reason: record.suspensionReason || '',
+        status: statusValue,
         observation: record.suspensionObservation || ''
       };
     }
     return {
-      status: 'Operativa',
-      reason: '',
+      status: 'En ejecución',
       observation: ''
     };
   }, [statusHistory, selectedDate, selectedShift]);
@@ -271,8 +283,8 @@ export default function DashboardBI() {
     // CRITICAL REQUIREMENT: Filter out all 'PLANIFICADO' programs for adherence/compliance KPIs
     const activePrograms = washingPrograms.filter(p => p.status !== 'PLANIFICADO');
 
-    // 1. Selected day stats
-    const todayPrograms = activePrograms.filter(p => p.date === selectedDate && p.shift === selectedShift);
+    // 1. Selected day stats (Entire Day for Avance Diario)
+    const todayPrograms = activePrograms.filter(p => p.date === selectedDate);
     let todayProgrammed = 0;
     let todayCompleted = 0;
     let todayPending = 0;
@@ -566,39 +578,63 @@ export default function DashboardBI() {
         </div>
       </section>
 
-      {/* PRIORITARY SUSPENSION ALERT */}
-      {currentDayOperation.status === 'Suspendida' && (
-        <div className="mb-5 bg-amber-500/10 border border-amber-500/30 text-amber-200 px-6 py-4 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fadeIn">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/20 shrink-0">
-              <AlertTriangle className="w-5 h-5 animate-bounce" style={{ animationDuration: '3s' }} />
-            </div>
-            <div>
-              <h4 className="text-sm font-black uppercase tracking-wider text-amber-400">Jornada Suspendida</h4>
-              <p className="text-xs text-slate-300 font-medium mt-0.5">
-                Motivo: <span className="font-bold text-white">{currentDayOperation.reason}</span>
-                {currentDayOperation.observation && (
-                  <span className="text-slate-400 italic ml-2">({currentDayOperation.observation})</span>
-                )}
-              </p>
-            </div>
+      {/* ESTADO GENERAL DE LA OPERACIÓN */}
+      <div className={`mb-5 p-5 rounded-3xl border shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 ${
+        currentDayOperation.status === 'En ejecución'
+          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
+          : currentDayOperation.status === 'Detenido'
+          ? 'bg-red-500/10 border-red-500/20 text-red-200'
+          : 'bg-amber-500/10 border-amber-500/20 text-amber-200'
+      }`}>
+        <div className="flex items-center gap-3.5">
+          <div className={`p-3 rounded-2xl shrink-0 border ${
+            currentDayOperation.status === 'En ejecución'
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
+              : currentDayOperation.status === 'Detenido'
+              ? 'bg-red-500/15 text-red-400 border-red-500/20'
+              : 'bg-amber-500/15 text-amber-400 border-amber-500/20'
+          }`}>
+            {currentDayOperation.status === 'En ejecución' ? (
+              <CheckCircle className="w-5 h-5 animate-pulse" />
+            ) : currentDayOperation.status === 'Detenido' ? (
+              <XCircle className="w-5 h-5 animate-pulse" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            )}
           </div>
-          <div className="text-[10px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/15 self-start sm:self-auto">
-            Sin Operación Registrada
+          <div>
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Estado General del Turno</span>
+            <h4 className="text-sm font-black text-white mt-0.5 flex items-center gap-2">
+              <span>{currentDayOperation.status}</span>
+            </h4>
+            {currentDayOperation.observation && (
+              <p className="text-xs text-slate-300 italic mt-0.5">
+                "{currentDayOperation.observation}"
+              </p>
+            )}
           </div>
         </div>
-      )}
+        <div className={`text-[10px] font-black uppercase tracking-widest px-3.5 py-1.5 rounded-full border self-start sm:self-auto ${
+          currentDayOperation.status === 'En ejecución'
+            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/15'
+            : currentDayOperation.status === 'Detenido'
+            ? 'text-red-400 bg-red-500/10 border-red-500/15'
+            : 'text-amber-400 bg-amber-500/10 border-amber-500/15'
+        }`}>
+          {currentDayOperation.status === 'En ejecución' ? '🟢 OPERANDO NORMAL' : '🔴 OPERACIÓN DETENIDA/SUSPENDIDA'}
+        </div>
+      </div>
 
       {/* KPI GRID WITH DYNAMIC BACKLOG */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5 shrink-0">
         {/* KPI 1: Cumplimiento de Hoy */}
         <div className="relative overflow-hidden bg-slate-900/80 border border-slate-800/60 rounded-3xl p-6 shadow-xl flex items-center justify-between">
           <div className="space-y-2">
-            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">CUMPLIMIENTO TURNO</p>
+            <p className="text-xs font-extrabold tracking-widest text-slate-400 uppercase">AVANCE DIARIO</p>
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-black tracking-tighter text-white font-mono">{stats.todayCompliance}%</span>
               <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full flex items-center gap-0.5">
-                <ArrowUpRight size={10} /> Turno
+                <ArrowUpRight size={10} /> Día
               </span>
             </div>
             <div className="flex items-center gap-4 text-xs font-semibold text-slate-400 pt-1">

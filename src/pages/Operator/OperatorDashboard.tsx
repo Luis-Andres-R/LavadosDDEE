@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
   collection, 
@@ -34,7 +34,8 @@ import {
   Square,
   Save,
   Truck,
-  ListTodo
+  ListTodo,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
@@ -115,45 +116,70 @@ export default function OperatorDashboard() {
 
   // Find current day/shift operation status in statusHistory
   const currentDayOperation = useMemo(() => {
+    const mapStatus = (record: any) => {
+      if (!record) return { status: 'En ejecución', observation: '' };
+      let statusValue = record.operationStatus || 'En ejecución';
+      if (statusValue === 'Operativa') {
+        statusValue = 'En ejecución';
+      } else if (statusValue === 'Suspendida') {
+        const oldReason = record.suspensionReason || '';
+        if (oldReason.toLowerCase().includes('camión') || oldReason.toLowerCase().includes('camion')) {
+          statusValue = 'Suspendido por falta de camión';
+        } else if (oldReason.toLowerCase().includes('clima') || oldReason.toLowerCase().includes('climática')) {
+          statusValue = 'Suspendido por condiciones climáticas';
+        } else {
+          statusValue = 'Suspendido por contingencia operacional';
+        }
+      }
+      return {
+        status: statusValue,
+        observation: record.suspensionObservation || ''
+      };
+    };
+
     if (selectedShift === 'all') {
       const hist39 = statusHistory.find(h => h.id === `${selectedDate}_T39`);
       const hist44 = statusHistory.find(h => h.id === `${selectedDate}_T44`);
       
-      const suspended39 = hist39?.operationStatus === 'Suspendida';
-      const suspended44 = hist44?.operationStatus === 'Suspendida';
+      const mapped39 = mapStatus(hist39);
+      const mapped44 = mapStatus(hist44);
       
-      if (suspended39 && suspended44) {
+      const isSusp39 = mapped39.status !== 'En ejecución';
+      const isSusp44 = mapped44.status !== 'En ejecución';
+      
+      if (isSusp39 && isSusp44) {
         return {
-          status: 'Suspendida' as const,
-          reason: `${hist39.suspensionReason} (T39) / ${hist44.suspensionReason} (T44)`,
-          observation: `${hist39.suspensionObservation || ''} ${hist44.suspensionObservation || ''}`.trim()
+          status: 'Sin operación' as const,
+          reason: `T39: ${mapped39.status} | T44: ${mapped44.status}`,
+          observation: `${mapped39.observation} / ${mapped44.observation}`.trim()
         };
-      } else if (suspended39) {
+      } else if (isSusp39) {
         return {
-          status: 'Suspendida' as const,
-          reason: `${hist39.suspensionReason} (T39)`,
-          observation: hist39.suspensionObservation || ''
+          status: 'Operación Parcial' as const,
+          reason: `T39: ${mapped39.status}`,
+          observation: mapped39.observation
         };
-      } else if (suspended44) {
+      } else if (isSusp44) {
         return {
-          status: 'Suspendida' as const,
-          reason: `${hist44.suspensionReason} (T44)`,
-          observation: hist44.suspensionObservation || ''
+          status: 'Operación Parcial' as const,
+          reason: `T44: ${mapped44.status}`,
+          observation: mapped44.observation
         };
       }
     } else {
       const historyId = `${selectedDate}_${selectedShift}`;
       const record = statusHistory.find(h => h.id === historyId);
       if (record) {
+        const mapped = mapStatus(record);
         return {
-          status: (record.operationStatus || 'Operativa') as 'Operativa' | 'Suspendida',
-          reason: record.suspensionReason || '',
-          observation: record.suspensionObservation || ''
+          status: mapped.status,
+          reason: mapped.status !== 'En ejecución' ? mapped.status : '',
+          observation: mapped.observation
         };
       }
     }
     return {
-      status: 'Operativa' as const,
+      status: 'En ejecución' as const,
       reason: '',
       observation: ''
     };
@@ -696,19 +722,39 @@ export default function OperatorDashboard() {
       {/* Program List */}
       <div className="px-6 py-8 space-y-6">
 
-        {currentDayOperation.status === 'Suspendida' && (
-          <div className="bg-amber-50 border border-amber-300 text-amber-900 px-6 py-4 rounded-3xl shadow-sm flex flex-col gap-2">
+        {currentDayOperation.status !== 'En ejecución' && (
+          <div className={`border px-6 py-4 rounded-3xl shadow-sm flex flex-col gap-2 ${
+            currentDayOperation.status === 'Detenido'
+              ? 'bg-red-50 border-red-300 text-red-950'
+              : 'bg-amber-50 border-amber-300 text-amber-950'
+          }`}>
             <div className="flex items-start gap-3">
-              <div className="p-2 rounded-2xl bg-amber-100 text-amber-600 shrink-0 mt-0.5 animate-pulse">
-                <AlertTriangle className="w-5 h-5" />
+              <div className={`p-2 rounded-2xl shrink-0 mt-0.5 animate-pulse ${
+                currentDayOperation.status === 'Detenido' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
+              }`}>
+                {currentDayOperation.status === 'Detenido' ? (
+                  <X className="w-5 h-5" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5" />
+                )}
               </div>
               <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-amber-800">Atención: Jornada Suspendida</h4>
-                <p className="text-[11px] text-slate-700 font-bold mt-0.5 leading-relaxed">
-                  Esta jornada se encuentra suspendida. Motivo principal: <span className="text-slate-900 font-black">{currentDayOperation.reason}</span>.
-                </p>
+                <h4 className={`text-xs font-black uppercase tracking-wider ${
+                  currentDayOperation.status === 'Detenido' ? 'text-red-900' : 'text-amber-900'
+                }`}>
+                  Atención: {currentDayOperation.status}
+                </h4>
+                {currentDayOperation.reason && (
+                  <p className="text-[11px] text-slate-700 font-bold mt-0.5 leading-relaxed">
+                    Estado principal: <span className="text-slate-900 font-black">{currentDayOperation.reason}</span>.
+                  </p>
+                )}
                 {currentDayOperation.observation && (
-                  <p className="text-[10px] text-slate-500 italic mt-1 font-medium bg-amber-100/30 p-2 rounded-xl border border-amber-100/50">
+                  <p className={`text-[10px] italic mt-1 font-medium p-2 rounded-xl border ${
+                    currentDayOperation.status === 'Detenido'
+                      ? 'text-red-700 bg-red-100/30 border-red-100/50'
+                      : 'text-amber-700 bg-amber-100/30 border-amber-100/50'
+                  }`}>
                     "{currentDayOperation.observation}"
                   </p>
                 )}

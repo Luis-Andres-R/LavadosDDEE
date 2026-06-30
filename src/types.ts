@@ -216,7 +216,7 @@ export interface TruckStatusHistory {
     reason?: string;
     observation?: string;
   }[];
-  operationStatus?: 'Operativa' | 'Suspendida';
+  operationStatus?: string;
   suspensionReason?: string;
   suspensionObservation?: string;
   savedAt: any;

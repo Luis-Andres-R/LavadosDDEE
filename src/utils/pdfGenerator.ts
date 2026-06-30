@@ -165,7 +165,10 @@ export const generatePDFReport = async (
   });
 
   let tableStartY = 95;
-  const suspendedDays = (statusHistory || []).filter(h => h.operationStatus === 'Suspendida');
+  const suspendedDays = (statusHistory || []).filter(h => {
+    const s = h.operationStatus || 'En ejecución';
+    return s !== 'En ejecución' && s !== 'Operativa';
+  });
   if (suspendedDays.length > 0) {
     doc.setTextColor(217, 119, 6); // Amber-600
     doc.setFont('Helvetica', 'bold');
@@ -411,7 +414,7 @@ export const generatePDFReport = async (
     
     const readingsTable = readings.map(r => {
       const isSuspendedDay = statusHistory?.some(
-        h => h.date === r.date && h.shift === r.shift && h.operationStatus === 'Suspendida'
+        h => h.date === r.date && h.shift === r.shift && h.operationStatus !== 'En ejecución' && h.operationStatus !== 'Operativa'
       );
       if (isSuspendedDay) {
         return [

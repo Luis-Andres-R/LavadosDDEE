@@ -14,8 +14,7 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
   const [selectedShift, setSelectedShift] = useState<ShiftType>('T39');
   const [pendingChanges, setPendingChanges] = useState<Record<string, TruckStatus>>({});
   const [workshopDetails, setWorkshopDetails] = useState<Record<string, { entryHour?: string; reason?: string; observation?: string }>>({});
-  const [operationStatus, setOperationStatus] = useState<'Operativa' | 'Suspendida'>('Operativa');
-  const [suspensionReason, setSuspensionReason] = useState<string>('');
+  const [operationStatus, setOperationStatus] = useState<string>('En ejecución');
   const [suspensionObservation, setSuspensionObservation] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -60,15 +59,26 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
           });
           setPendingChanges(changes);
           setWorkshopDetails(details);
-          setOperationStatus(historyData.operationStatus || 'Operativa');
-          setSuspensionReason(historyData.suspensionReason || '');
+          let fetchedStatus = historyData.operationStatus || 'En ejecución';
+          if (fetchedStatus === 'Operativa') {
+            fetchedStatus = 'En ejecución';
+          } else if (fetchedStatus === 'Suspendida') {
+            const oldReason = historyData.suspensionReason || '';
+            if (oldReason.toLowerCase().includes('camión') || oldReason.toLowerCase().includes('camion')) {
+              fetchedStatus = 'Suspendido por falta de camión';
+            } else if (oldReason.toLowerCase().includes('clima') || oldReason.toLowerCase().includes('climática')) {
+              fetchedStatus = 'Suspendido por condiciones climáticas';
+            } else {
+              fetchedStatus = 'Suspendido por contingencia operacional';
+            }
+          }
+          setOperationStatus(fetchedStatus);
           setSuspensionObservation(historyData.suspensionObservation || '');
           setHasUnsavedChanges(false);
         } else {
           setPendingChanges({});
           setWorkshopDetails({});
-          setOperationStatus('Operativa');
-          setSuspensionReason('');
+          setOperationStatus('En ejecución');
           setSuspensionObservation('');
           setHasUnsavedChanges(false);
         }
@@ -151,8 +161,8 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
         shift: selectedShift,
         trucks: historyTrucks,
         operationStatus,
-        suspensionReason: operationStatus === 'Suspendida' ? suspensionReason : '',
-        suspensionObservation: operationStatus === 'Suspendida' && suspensionReason === 'Otro' ? suspensionObservation : '',
+        suspensionReason: operationStatus !== 'En ejecución' ? operationStatus : '',
+        suspensionObservation: operationStatus !== 'En ejecución' ? suspensionObservation : '',
         savedAt: serverTimestamp(),
         savedBy: profile?.email || 'admin'
       });
@@ -281,89 +291,64 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
             </div>
         </div>
 
-        {/* Nuevo bloque: Operación de la Jornada */}
+        {/* Bloque: Estado General de la Operación */}
         <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-6 mb-8">
           <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-4 flex items-center gap-2">
             <Calendar size={16} className="text-blue-500" />
-            Operación de la Jornada
+            Estado General de la Operación
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Estado Operativo de la Jornada</label>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOperationStatus('Operativa');
-                    setHasUnsavedChanges(true);
-                  }}
-                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-                    operationStatus === 'Operativa'
-                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${operationStatus === 'Operativa' ? 'bg-white animate-pulse' : 'bg-emerald-500'}`} />
-                  Operativa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOperationStatus('Suspendida');
-                    setHasUnsavedChanges(true);
-                  }}
-                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-                    operationStatus === 'Suspendida'
-                      ? 'bg-amber-600 text-white shadow-lg shadow-amber-100'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${operationStatus === 'Suspendida' ? 'bg-white animate-pulse' : 'bg-amber-500'}`} />
-                  Suspendida
-                </button>
+              <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Estado General del Turno</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  { value: 'En ejecución', color: 'emerald', label: '🟢 En ejecución', dot: 'bg-emerald-500' },
+                  { value: 'Suspendido por falta de camión', color: 'amber', label: '🟡 Suspendido por falta de camión', dot: 'bg-amber-500' },
+                  { value: 'Suspendido por condiciones climáticas', color: 'amber', label: '🟡 Suspendido por condiciones climáticas', dot: 'bg-amber-500' },
+                  { value: 'Suspendido por contingencia operacional', color: 'amber', label: '🟡 Suspendido por contingencia operacional', dot: 'bg-amber-500' },
+                  { value: 'Detenido', color: 'red', label: '🔴 Detenido', dot: 'bg-red-500' },
+                ].map((opt) => {
+                  const isSelected = operationStatus === opt.value;
+                  let btnStyle = 'bg-white border-slate-200 text-slate-600 hover:border-slate-300';
+                  if (isSelected) {
+                    if (opt.color === 'emerald') btnStyle = 'bg-emerald-600 text-white shadow-lg shadow-emerald-100 border-transparent';
+                    else if (opt.color === 'amber') btnStyle = 'bg-amber-500 text-white shadow-lg shadow-amber-100 border-transparent';
+                    else if (opt.color === 'red') btnStyle = 'bg-red-600 text-white shadow-lg shadow-red-100 border-transparent';
+                  }
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setOperationStatus(opt.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className={`py-2.5 px-4 rounded-xl text-[11px] font-bold transition-all flex items-center gap-2.5 text-left border ${btnStyle}`}
+                    >
+                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${isSelected ? 'bg-white animate-pulse' : opt.dot}`} />
+                      <span>{opt.label.substring(2)}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {operationStatus === 'Suspendida' && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Motivo de Suspensión</label>
-                  <select
-                    value={suspensionReason}
-                    onChange={(e) => {
-                      setSuspensionReason(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 cursor-pointer"
-                  >
-                    <option value="">-- Seleccionar Motivo --</option>
-                    <option value="Falla de camión">Falla de camión</option>
-                    <option value="Capacitación">Capacitación</option>
-                    <option value="Reunión operacional">Reunión operacional</option>
-                    <option value="Condiciones climáticas">Condiciones climáticas</option>
-                    <option value="Emergencia">Emergencia</option>
-                    <option value="Mantención">Mantención</option>
-                    <option value="Otro">Otro</option>
-                  </select>
-                </div>
-
-                {suspensionReason === 'Otro' && (
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Observación de Suspensión</label>
-                    <input
-                      type="text"
-                      placeholder="Escriba el motivo detallado..."
-                      value={suspensionObservation}
-                      onChange={(e) => {
-                        setSuspensionObservation(e.target.value);
-                        setHasUnsavedChanges(true);
-                      }}
-                      className="w-full bg-white border border-slate-200 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                )}
+            <div className="space-y-4 flex flex-col justify-center">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Observación Breve (Opcional)</label>
+                <textarea
+                  placeholder="Ej. Esperando cambio de turno, neblina baja, etc."
+                  value={suspensionObservation}
+                  onChange={(e) => {
+                    setSuspensionObservation(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  maxLength={100}
+                  className="w-full bg-white border border-slate-200 px-4 py-3 rounded-2xl text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 h-[100px] resize-none"
+                />
+                <p className="text-[9px] text-slate-400 font-bold text-right mr-1 uppercase">Máx. 100 caracteres</p>
               </div>
-            )}
+            </div>
           </div>
         </div>
 
