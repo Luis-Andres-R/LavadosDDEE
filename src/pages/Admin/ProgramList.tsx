@@ -160,13 +160,13 @@ export default function ProgramList() {
                   <div className="p-1.5 rounded-lg bg-slate-50 text-slate-400 border border-slate-100">
                     <UserIcon size={14} />
                   </div>
-                  <span className="text-xs font-bold truncate max-w-[120px]">{program.washingOperator}</span>
+                  <span className="text-xs font-bold truncate max-w-[120px]">{program.displayOperatorName || program.washingOperator}</span>
                 </div>
                 <div className="flex items-center gap-3 text-slate-500">
                   <div className="p-1.5 rounded-lg bg-slate-50 text-slate-400 border border-slate-100">
                     <Truck size={14} />
                   </div>
-                  <span className="text-xs font-bold">{program.truck}</span>
+                  <span className="text-xs font-bold">{program.displayTruckName || program.truck}</span>
                 </div>
               </div>
               

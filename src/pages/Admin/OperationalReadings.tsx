@@ -190,8 +190,8 @@ export default function OperationalReadings() {
                         <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{r.shift}</p>
                       </td>
                       <td className="px-6 py-6">
-                          <p className="text-xs font-bold text-slate-700">{r.washingOperator}</p>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{r.truck}</p>
+                          <p className="text-xs font-bold text-slate-700">{r.displayOperatorName || r.washingOperator}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{r.displayTruckName || r.truck}</p>
                       </td>
                       <td className="px-6 py-6 bg-slate-50/30">
                           <ReadingBadge reading={r.readings.TKA} />

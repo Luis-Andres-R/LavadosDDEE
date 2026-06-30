@@ -104,6 +104,7 @@ export default function OperatorDashboard() {
   const [updateDate, setUpdateDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [updateTime, setUpdateTime] = useState(format(new Date(), 'HH:mm'));
   const [updateOperator, setUpdateOperator] = useState('Beltrán Cuello');
+  const [updateReplacementOperatorName, setUpdateReplacementOperatorName] = useState('');
   const [updateTruck, setUpdateTruck] = useState('CM95');
   const [updateReplacementTruckTag, setUpdateReplacementTruckTag] = useState('');
   const [updateObs, setUpdateObs] = useState('');
@@ -291,6 +292,18 @@ export default function OperatorDashboard() {
         updateData.completedTime = updateTime;
         updateData.washingOperator = updateOperator;
         updateData.truck = updateTruck;
+        if (updateOperator === 'REEMPLAZO') {
+          if (!updateReplacementOperatorName.trim()) {
+            alert("Por favor ingrese el nombre del operador de reemplazo.");
+            return;
+          }
+          updateData.replacementOperatorName = updateReplacementOperatorName.trim();
+          updateData.displayOperatorName = `${updateReplacementOperatorName.trim()} (Reemplazo)`;
+        } else {
+          updateData.replacementOperatorName = '';
+          updateData.displayOperatorName = updateOperator;
+        }
+
         if (updateTruck === 'REEMPLAZO') {
           if (!updateReplacementTruckTag.trim()) {
             alert("Por favor ingrese el tag del camión de reemplazo.");
@@ -1009,7 +1022,7 @@ export default function OperatorDashboard() {
                       ) : (
                         <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] font-semibold text-slate-500 font-mono flex flex-col gap-0.5">
                           <span>Realizado el: {item.completedDate} a las {item.completedTime} hrs</span>
-                          <span>Por: {item.washingOperator || 'Operador'} ({item.operatorEmail ? item.operatorEmail.split('@')[0] : 'S/I'})</span>
+                          <span>Por: {item.displayOperatorName || item.washingOperator || 'Operador'} ({item.operatorEmail ? item.operatorEmail.split('@')[0] : 'S/I'})</span>
                         </div>
                       )}
                     </div>
@@ -1022,6 +1035,17 @@ export default function OperatorDashboard() {
 
         <div className="mt-12 border-t border-slate-200 pt-8">
             <ReadingsForm />
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-slate-200">
+          <button
+            type="button"
+            onClick={logout}
+            className="w-full py-4 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-red-100"
+          >
+            <LogOut size={16} />
+            Salir del Sistema
+          </button>
         </div>
       </div>
 
@@ -1306,6 +1330,20 @@ export default function OperatorDashboard() {
                       </div>
                     </div>
 
+                    {updateOperator === 'REEMPLAZO' && (
+                      <div className="space-y-1 animate-fade-in mt-2">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 font-sans">Nombre real del operador de reemplazo *</label>
+                        <input 
+                          type="text"
+                          required
+                          value={updateReplacementOperatorName}
+                          onChange={e => setUpdateReplacementOperatorName(e.target.value)}
+                          placeholder="Ej. Juan Pérez"
+                          className="w-full rounded-2xl border border-amber-350 bg-amber-50/20 py-3 px-4 text-sm font-bold text-slate-705 focus:bg-white focus:border-indigo-550 outline-hidden transition-all font-sans"
+                        />
+                      </div>
+                    )}
+
                     {updateTruck === 'REEMPLAZO' && (
                       <div className="space-y-1 animate-fade-in mt-2">
                         <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500">Tag del camión de reemplazo *</label>
@@ -1501,7 +1539,7 @@ function ActionModal({ program, type, trucks, onClose, onSubmit }: { program: Wa
                             )}
 
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Causa de la Deuda</label>
+                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Causa del Pendiente</label>
                                 <select 
                                     value={formData.reason}
                                     onChange={e => setFormData(f => ({ ...f, reason: e.target.value }))}

@@ -76,6 +76,7 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
     washingOperator: WASHING_OPERATORS[0],
     truck: WASHING_TRUCKS[0],
     replacementTruckTag: '',
+    replacementOperatorName: '',
     adminObservation: '',
     status: 'Pendiente' as 'Pendiente' | 'PLANIFICADO'
   });
@@ -146,6 +147,20 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
       alert("Debe seleccionar al menos un paquete para programar.");
       return;
     }
+    if (formData.status === 'Pendiente') {
+      if (formData.washingOperator === 'SIN ASIGNAR' || !formData.washingOperator) {
+        alert("Para un programa en estado Pendiente, debe asignar un operador de lavado.");
+        return;
+      }
+      if (formData.truck === 'SIN ASIGNAR' || !formData.truck) {
+        alert("Para un programa en estado Pendiente, debe asignar un camión.");
+        return;
+      }
+    }
+    if (formData.washingOperator === 'REEMPLAZO' && !formData.replacementOperatorName.trim()) {
+      alert("Por favor ingrese el nombre del operador de reemplazo.");
+      return;
+    }
     if (formData.truck === 'REEMPLAZO' && !formData.replacementTruckTag.trim()) {
       alert("Por favor ingrese el tag del camión de reemplazo.");
       return;
@@ -199,10 +214,22 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
           percentage: 0
         };
 
+        if (formData.washingOperator === 'REEMPLAZO') {
+          payload.replacementOperatorName = formData.replacementOperatorName.trim();
+          payload.displayOperatorName = `${formData.replacementOperatorName.trim()} (Reemplazo)`;
+        } else {
+          payload.replacementOperatorName = '';
+          payload.displayOperatorName = formData.washingOperator;
+        }
+
         if (formData.truck === 'REEMPLAZO') {
           payload.truckId = 'REEMPLAZO';
           payload.replacementTruckTag = formData.replacementTruckTag.trim().toUpperCase();
           payload.displayTruckName = `${formData.replacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+        } else {
+          payload.truckId = formData.truck;
+          payload.replacementTruckTag = '';
+          payload.displayTruckName = formData.truck;
         }
 
         if (pkgTemplate.controlType === 'cantidad') {
@@ -374,6 +401,42 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
               </div>
             )}
 
+            {/* Program Status Selection */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Estado de Programación</label>
+              <div className="relative">
+                <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                <select
+                  required
+                  value={formData.status}
+                  onChange={e => {
+                    const nextStatus = e.target.value as any;
+                    setFormData(p => {
+                      let nextOp = p.washingOperator;
+                      let nextTr = p.truck;
+                      if (nextStatus === 'PLANIFICADO') {
+                        nextOp = 'SIN ASIGNAR';
+                        nextTr = 'SIN ASIGNAR';
+                      } else {
+                        if (nextOp === 'SIN ASIGNAR') nextOp = WASHING_OPERATORS[0];
+                        if (nextTr === 'SIN ASIGNAR') nextTr = 'CM95';
+                      }
+                      return {
+                        ...p,
+                        status: nextStatus,
+                        washingOperator: nextOp,
+                        truck: nextTr
+                      };
+                    });
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 transition-all"
+                >
+                  <option value="Pendiente">Pendiente (Ejecución inmediata)</option>
+                  <option value="PLANIFICADO">PLANIFICADO (Planificación avanzada)</option>
+                </select>
+              </div>
+            </div>
+
             {/* Operator Selection */}
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Operador de Lavado</label>
@@ -385,6 +448,9 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
                   onChange={e => setFormData(p => ({ ...p, washingOperator: e.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 transition-all"
                 >
+                  {formData.status === 'PLANIFICADO' && (
+                    <option value="SIN ASIGNAR">SIN ASIGNAR</option>
+                  )}
                   {WASHING_OPERATORS.map(op => (
                     <option key={op} value={op}>{op}</option>
                   ))}
@@ -404,6 +470,9 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 transition-all font-mono"
                 >
                   <option value="" disabled>Seleccionar camión...</option>
+                  {formData.status === 'PLANIFICADO' && (
+                    <option value="SIN ASIGNAR">SIN ASIGNAR</option>
+                  )}
                   {['CM95', 'CM97', 'REEMPLAZO'].map(code => (
                     <option key={code} value={code}>{code}</option>
                   ))}
@@ -411,22 +480,20 @@ export default function ProgramForm({ onClose }: ProgramFormProps) {
               </div>
             </div>
 
-            {/* Program Status Selection */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Estado de Programación</label>
-              <div className="relative">
-                <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                <select
+            {/* Replacement Operator Name */}
+            {formData.washingOperator === 'REEMPLAZO' && (
+              <div className="sm:col-span-2 space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 ml-1">Nombre real del operador de reemplazo *</label>
+                <input
+                  type="text"
                   required
-                  value={formData.status}
-                  onChange={e => setFormData(p => ({ ...p, status: e.target.value as any }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-blue-500 transition-all"
-                >
-                  <option value="Pendiente">Pendiente (Ejecución inmediata)</option>
-                  <option value="PLANIFICADO">PLANIFICADO (Planificación avanzada)</option>
-                </select>
+                  value={formData.replacementOperatorName}
+                  onChange={e => setFormData(p => ({ ...p, replacementOperatorName: e.target.value }))}
+                  placeholder="Ej. Juan Pérez, Luis Gómez, etc..."
+                  className="w-full rounded-2xl border border-amber-300 bg-amber-50/20 py-3 px-4 text-sm font-bold text-slate-700 outline-hidden focus:bg-white focus:border-amber-500 transition-all font-sans"
+                />
               </div>
-            </div>
+            )}
 
             {/* Replacement Truck Tag */}
             {formData.truck === 'REEMPLAZO' && (

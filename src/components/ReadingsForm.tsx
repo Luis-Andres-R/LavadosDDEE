@@ -17,6 +17,7 @@ export default function ReadingsForm() {
     washingOperator: WASHING_OPERATORS[0],
     truck: '',
     replacementTruckTag: '',
+    replacementOperatorName: '',
     readings: {
       TKA: { us: '', temperature: '', level: '' },
       TKC: { us: '', temperature: '', level: '' },
@@ -94,6 +95,11 @@ export default function ReadingsForm() {
       return;
     }
 
+    if (formData.washingOperator === 'REEMPLAZO' && !formData.replacementOperatorName.trim()) {
+      alert("Por favor ingrese el nombre del operador de reemplazo.");
+      return;
+    }
+
     setLoading(true);
     try {
       // Parse values only on submit
@@ -118,10 +124,22 @@ export default function ReadingsForm() {
         updatedAt: serverTimestamp()
       };
 
+      if (formData.washingOperator === 'REEMPLAZO') {
+        data.replacementOperatorName = formData.replacementOperatorName.trim();
+        data.displayOperatorName = `${formData.replacementOperatorName.trim()} (Reemplazo)`;
+      } else {
+        data.replacementOperatorName = '';
+        data.displayOperatorName = formData.washingOperator;
+      }
+
       if (formData.truck === 'REEMPLAZO') {
         data.truckId = 'REEMPLAZO';
         data.replacementTruckTag = formData.replacementTruckTag.trim().toUpperCase();
         data.displayTruckName = `${formData.replacementTruckTag.trim().toUpperCase()} (Reemplazo)`;
+      } else {
+        data.truckId = formData.truck;
+        data.replacementTruckTag = '';
+        data.displayTruckName = formData.truck;
       }
       
       await addDoc(collection(db, 'operationalReadings'), data);
@@ -194,6 +212,20 @@ export default function ReadingsForm() {
               {WASHING_OPERATORS.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
             </select>
           </div>
+
+          {formData.washingOperator === 'REEMPLAZO' && (
+            <div className="mt-4 space-y-2 animate-fade-in">
+              <label className="text-[9px] font-black text-amber-450 uppercase tracking-widest ml-1 font-sans">Nombre real del operador de reemplazo *</label>
+              <input 
+                type="text"
+                required
+                value={formData.replacementOperatorName}
+                onChange={e => setFormData(p => ({ ...p, replacementOperatorName: e.target.value }))}
+                placeholder="Ej. Juan Pérez"
+                className="w-full rounded-xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-bold text-white outline-hidden focus:bg-white/10 focus:border-blue-500 font-sans"
+              />
+            </div>
+          )}
 
           {formData.truck === 'REEMPLAZO' && (
             <div className="mt-4 space-y-2 animate-fade-in">

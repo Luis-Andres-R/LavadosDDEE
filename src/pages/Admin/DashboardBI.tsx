@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import { WashingProgram, OutOfProgramWashing, TruckInfo, TruckStatus, ShiftType } from '../../types';
+import { WashingProgram, OutOfProgramWashing, TruckInfo, TruckStatus, ShiftType, OFFICIAL_START_DATE } from '../../types';
 import { format, subDays, parseISO } from 'date-fns';
 import { calculateBacklogMetrics } from '../../data/backlogCatalog';
 import { 
@@ -281,7 +281,9 @@ export default function DashboardBI() {
 
   const stats = useMemo(() => {
     // CRITICAL REQUIREMENT: Filter out all 'PLANIFICADO' programs for adherence/compliance KPIs
-    const activePrograms = washingPrograms.filter(p => p.status !== 'PLANIFICADO');
+    // Also restrict KPIs and historical indicators to start officially from OFFICIAL_START_DATE (08-07-2026)
+    const activePrograms = washingPrograms.filter(p => p.status !== 'PLANIFICADO' && p.date >= OFFICIAL_START_DATE);
+    const officialOOP = outOfProgramWashings.filter(w => w.date >= OFFICIAL_START_DATE);
 
     // 1. Selected day stats (Entire Day for Avance Diario)
     const todayPrograms = activePrograms.filter(p => p.date === selectedDate);
@@ -318,8 +320,8 @@ export default function DashboardBI() {
       : 0;
 
     // 3. Out of program stats
-    const todayOOP = outOfProgramWashings.filter(w => w.date === selectedDate && w.shift === selectedShift).length;
-    const monthOOP = outOfProgramWashings.filter(w => w.date && w.date.startsWith(currentMonthPrefix)).length;
+    const todayOOP = officialOOP.filter(w => w.date === selectedDate && w.shift === selectedShift).length;
+    const monthOOP = officialOOP.filter(w => w.date && w.date.startsWith(currentMonthPrefix)).length;
 
     // 4. Line Chart SVG Data: Evolution of the last 30 days
     const last30DaysRaw = [];
@@ -329,12 +331,10 @@ export default function DashboardBI() {
       const dStr = format(d, 'yyyy-MM-dd');
       const dLabel = format(d, 'dd/MM');
 
-      const dayPrograms = activePrograms.filter(p => p.date === dStr);
-      let dayCompleted = 0;
-      dayPrograms.forEach(p => {
-        const { completed } = getProgramStructures(p);
-        dayCompleted += completed;
-      });
+      // Only plot data points starting from OFFICIAL_START_DATE
+      const dayCompleted = dStr >= OFFICIAL_START_DATE 
+        ? activePrograms.filter(p => p.date === dStr).reduce((sum, p) => sum + getProgramStructures(p).completed, 0)
+        : 0;
 
       if (dayCompleted > maxDailyCompleted) {
         maxDailyCompleted = dayCompleted;
@@ -394,7 +394,7 @@ export default function DashboardBI() {
       summaryTableMap[p.date].pending += pending;
     });
 
-    outOfProgramWashings.forEach(w => {
+    officialOOP.forEach(w => {
       if (!w.date) return;
       if (!summaryTableMap[w.date]) {
         summaryTableMap[w.date] = { date: w.date, programmed: 0, completed: 0, pending: 0, oop: 0 };
@@ -553,6 +553,16 @@ export default function DashboardBI() {
           </div>
         </div>
       </header>
+
+      {selectedDate < OFFICIAL_START_DATE && (
+        <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs font-bold flex items-center gap-3 animate-fade-in shrink-0">
+          <Info className="w-5 h-5 text-amber-400 shrink-0" />
+          <div>
+            <p className="font-black text-amber-400 uppercase tracking-widest text-[9px]">Consulta Histórica de Marcha Blanca</p>
+            <p className="text-slate-300 mt-0.5">Esta fecha es anterior al inicio oficial de operación (08-07-2026). Los indicadores y KPIs oficiales se mantienen en 0% para respaldar el proceso de pruebas.</p>
+          </div>
+        </div>
+      )}
 
       {/* NEW MEJORA N.º 7: EXECUTED ROLE & TIME HEADER PANELS */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5 bg-slate-950/40 border border-slate-800/50 p-4 rounded-2xl shrink-0">

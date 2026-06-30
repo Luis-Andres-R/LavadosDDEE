@@ -27,7 +27,9 @@ export type WashingProgramType = 'Equipos críticos' | 'Planta' | 'Periferia';
 export const WASHING_OPERATORS = [
   'Beltrán Cuello',
   'Joel Cisternas',
-  'Eduardo Rojas'
+  'Eduardo Rojas',
+  'Franklin González',
+  'REEMPLAZO'
 ];
 
 export type TruckStatus = 'En servicio' | 'Fuera de servicio' | 'Disponible' | 'En taller' | 'Sin Registrar';
@@ -46,6 +48,7 @@ export interface TruckInfo {
 
 export const INITIAL_TRUCKS = ['CM95', 'CM97'];
 export const WASHING_TRUCKS = ['CM95', 'CM97'];
+export const OFFICIAL_START_DATE = '2026-07-08';
 
 export type ProgramStatus = 'Pendiente' | 'Completo' | 'Parcial' | 'No realizado' | 'Cerrado';
 
@@ -167,6 +170,10 @@ export interface OperationalReading {
   };
   createdAt: any;
   updatedAt: any;
+  replacementOperatorName?: string;
+  displayOperatorName?: string;
+  replacementTruckTag?: string;
+  displayTruckName?: string;
 }
 
 export const REASONS = [
@@ -203,6 +210,8 @@ export interface TruckOperatingHours {
   updatedAt: any;
   replacementTruckTag?: string;
   displayTruckName?: string;
+  replacementOperatorName?: string;
+  displayOperatorName?: string;
 }
 
 export interface TruckStatusHistory {
@@ -245,6 +254,8 @@ export interface OutOfProgramWashing {
   completedAt?: any;
   replacementTruckTag?: string;
   displayTruckName?: string;
+  replacementOperatorName?: string;
+  displayOperatorName?: string;
 }
 
 export const OUT_OF_PROGRAM_REASONS = [

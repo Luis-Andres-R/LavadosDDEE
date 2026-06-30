@@ -2,7 +2,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { WashingProgram, OperationalReading, TruckOperatingHours, TruckStatusHistory, INITIAL_TRUCKS, OutOfProgramWashing } from '../../types';
 import { format } from 'date-fns';
 import { generatePDFReport } from '../../utils/pdfGenerator';
-import { FileDown, Printer, X, CheckCircle2, AlertCircle, Clock, Thermometer, Truck, Loader2, AlertTriangle, PlayCircle } from 'lucide-react';
+import { FileDown, Printer, X, CheckCircle2, AlertCircle, Clock, Thermometer, Truck, Loader2, AlertTriangle, PlayCircle, LogOut } from 'lucide-react';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 interface ReportData {
   programs: WashingProgram[];
@@ -17,18 +19,152 @@ interface ReportData {
 
 export default function ReportView() {
   const [data, setData] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [waterHoveredIdx, setWaterHoveredIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    const rawData = sessionStorage.getItem('currentReportData');
-    if (rawData) {
-      setData(JSON.parse(rawData));
+    async function loadReport() {
+      setLoading(true);
+      setError(null);
+      try {
+        // 1. Try sessionStorage
+        try {
+          const rawSession = sessionStorage.getItem('currentReportData');
+          if (rawSession) {
+            const parsed = JSON.parse(rawSession);
+            if (parsed && (parsed.programs?.length || parsed.readings?.length || parsed.opHours?.length || parsed.outOfPrograms?.length)) {
+              setData(parsed);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("sessionStorage read failed", e);
+        }
+
+        // 2. Try localStorage
+        try {
+          const rawLocal = localStorage.getItem('currentReportData');
+          if (rawLocal) {
+            const parsed = JSON.parse(rawLocal);
+            if (parsed && (parsed.programs?.length || parsed.readings?.length || parsed.opHours?.length || parsed.outOfPrograms?.length)) {
+              setData(parsed);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("localStorage read failed", e);
+        }
+
+        // 3. Try fetching from Firestore via URL Search Params
+        const params = new URLSearchParams(window.location.search);
+        const start = params.get('start');
+        const end = params.get('end');
+        const shift = params.get('shift') || 'Todos';
+        const reportType = params.get('type') || 'diario';
+
+        if (start && end) {
+          const qPrograms = query(
+            collection(db, 'washingPrograms'),
+            where('date', '>=', start),
+            where('date', '<=', end),
+            orderBy('date', 'asc')
+          );
+
+          const qReadings = query(
+            collection(db, 'operationalReadings'),
+            where('date', '>=', start),
+            where('date', '<=', end),
+            orderBy('date', 'asc')
+          );
+
+          const qOpHours = query(
+            collection(db, 'truckOperatingHours'),
+            where('date', '>=', start),
+            where('date', '<=', end),
+            orderBy('date', 'asc')
+          );
+
+          const qStatusHistory = query(
+            collection(db, 'truckStatusHistory'),
+            where('date', '>=', start),
+            where('date', '<=', end),
+            orderBy('date', 'asc')
+          );
+
+          const qOutOfProg = query(
+            collection(db, 'outOfProgramWashings'),
+            where('date', '>=', start),
+            where('date', '<=', end)
+          );
+
+          const [snapPrograms, snapReadings, snapOpHours, snapStatusHistory, snapOutOfProg] = await Promise.all([
+            getDocs(qPrograms),
+            getDocs(qReadings),
+            getDocs(qOpHours),
+            getDocs(qStatusHistory),
+            getDocs(qOutOfProg)
+          ]);
+
+          let programs = snapPrograms.docs.map(doc => ({ id: doc.id, ...doc.data() } as WashingProgram));
+          let readings = snapReadings.docs.map(doc => ({ id: doc.id, ...doc.data() } as OperationalReading));
+          let opHours = snapOpHours.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckOperatingHours));
+          let statusHistory = snapStatusHistory.docs.map(doc => ({ id: doc.id, ...doc.data() } as TruckStatusHistory));
+          let outOfPrograms = snapOutOfProg.docs.map(doc => ({ id: doc.id, ...doc.data() } as OutOfProgramWashing));
+
+          outOfPrograms.sort((a, b) => a.date.localeCompare(b.date));
+
+          if (shift !== 'Todos') {
+            programs = programs.filter(p => p.shift === shift);
+            readings = readings.filter(r => r.shift === shift);
+            opHours = opHours.filter(h => h.shift === shift);
+            statusHistory = statusHistory.filter(s => s.shift === shift);
+            outOfPrograms = outOfPrograms.filter(o => o.shift === shift);
+          }
+
+          if (programs.length === 0 && opHours.length === 0 && statusHistory.length === 0 && outOfPrograms.length === 0) {
+            setError("No existen registros para el período seleccionado");
+          } else {
+            setData({
+              programs,
+              readings,
+              opHours,
+              statusHistory,
+              outOfPrograms,
+              type: reportType,
+              range: { start, end },
+              selectedShift: shift
+            });
+          }
+        } else {
+          setError("No existen registros para el período seleccionado");
+        }
+      } catch (err: any) {
+        console.error("Error loading report data:", err);
+        setError("Error al cargar los datos del reporte: " + (err?.message || String(err)));
+      } finally {
+        setLoading(false);
+      }
     }
+
+    loadReport();
   }, []);
 
-  if (!data) {
+  // Safe reference for useMemo dependencies
+  const rawStatusHistory = data?.statusHistory || [];
+
+  const suspendedWorkdays = useMemo(() => {
+    return rawStatusHistory.filter(h => {
+      const status = h.operationStatus || 'En ejecución';
+      return status !== 'En ejecución' && status !== 'Operativa';
+    });
+  }, [rawStatusHistory]);
+
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
         <div className="text-center">
@@ -39,14 +175,38 @@ export default function ReportView() {
     );
   }
 
-  const { programs, readings, opHours, statusHistory = [], outOfPrograms = [], type, range, selectedShift = 'Todos' } = data;
+  if (error || !data) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 p-6">
+        <div className="text-center max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl">
+          <AlertCircle className="mx-auto h-16 w-16 text-amber-500 mb-6" />
+          <h2 className="text-xl font-black text-slate-900 tracking-tight mb-2">Aviso del Sistema</h2>
+          <p className="text-slate-600 font-medium text-sm mb-8 leading-relaxed">
+            {error || "No existen registros para el período seleccionado."}
+          </p>
+          <div className="flex gap-4">
+            <button
+              onClick={() => window.close()}
+              className="w-full py-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-bold text-slate-600 text-sm transition-all cursor-pointer"
+            >
+              Cerrar pestaña
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const suspendedWorkdays = useMemo(() => {
-    return (statusHistory || []).filter(h => {
-      const status = h.operationStatus || 'En ejecución';
-      return status !== 'En ejecución' && status !== 'Operativa';
-    });
-  }, [statusHistory]);
+  const { 
+    programs = [], 
+    readings = [], 
+    opHours = [], 
+    statusHistory = [], 
+    outOfPrograms = [], 
+    type = 'diario', 
+    range = { start: '', end: '' }, 
+    selectedShift = 'Todos' 
+  } = data;
 
   // Helper to calculate structures/equipments for a WashingProgram based on checklist/cantidad
   const getProgramStructures = (p: WashingProgram) => {
@@ -240,7 +400,7 @@ export default function ReportView() {
     });
 
     statusHistory.forEach(h => {
-      h.trucks.forEach(t => {
+      h.trucks?.forEach(t => {
         if (summary[t.code]) {
           summary[t.code][t.status] = (summary[t.code][t.status] || 0) + 1;
         }
@@ -649,11 +809,19 @@ export default function ReportView() {
     <div className="min-h-screen bg-slate-100 p-8 max-w-5xl mx-auto print:p-0 print:bg-white">
       {/* Action Bar - Hidden on print */}
       <div className="fixed bottom-8 right-8 flex gap-3 print:hidden z-50">
-        <button onClick={handlePrint} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold shadow-2xl hover:bg-slate-800 transition-all">
+        <button 
+          onClick={handleDownloadPDF} 
+          disabled={isGenerating} 
+          className="flex items-center gap-2 bg-blue-600 disabled:bg-blue-400 text-white px-6 py-3 rounded-2xl font-bold shadow-2xl hover:bg-blue-700 transition-all active:scale-95"
+        >
+          {isGenerating ? <Loader2 className="animate-spin" size={20} /> : <FileDown size={20} />}
+          Exportar PDF
+        </button>
+        <button onClick={handlePrint} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold shadow-2xl hover:bg-slate-800 transition-all active:scale-95">
           <Printer size={20} />
           Obtener reporte
         </button>
-        <button onClick={() => window.close()} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-6 py-3 rounded-2xl font-bold shadow-sm hover:bg-slate-50 transition-all">
+        <button onClick={() => window.close()} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-6 py-3 rounded-2xl font-bold shadow-sm hover:bg-slate-50 transition-all active:scale-95">
           <X size={20} />
           Cerrar
         </button>
@@ -1654,7 +1822,7 @@ export default function ReportView() {
                       <td className="p-3 border-r border-slate-100 font-bold text-slate-700">{h.date}</td>
                       <td className="p-3 border-r border-slate-100 text-center font-black text-blue-600">{h.shift}</td>
                       {['CM95', 'CM97'].map(code => {
-                        const s = h.trucks.find(t => t.code === code)?.status || '-';
+                        const s = h.trucks?.find(t => t.code === code)?.status || '-';
                         const display = getStatusDisplay(s);
                         return (
                           <td key={code} className={`p-2 border-r border-slate-100 last:border-r-0 text-center transition-colors ${display.color}`}>

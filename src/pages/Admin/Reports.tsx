@@ -68,9 +68,14 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
       };
       
       sessionStorage.setItem('currentReportData', JSON.stringify(reportData));
+      localStorage.setItem('currentReportData', JSON.stringify(reportData));
       
       const url = new URL(window.location.origin + window.location.pathname);
       url.searchParams.set('view', 'report');
+      url.searchParams.set('start', start);
+      url.searchParams.set('end', end);
+      url.searchParams.set('shift', filters.shift);
+      url.searchParams.set('type', type);
       window.open(url.toString(), '_blank');
       
     } catch (error) {

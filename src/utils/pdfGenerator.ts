@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { WashingProgram, OperationalReading, TruckOperatingHours, SHIFT_CONFIG, TruckStatusHistory, INITIAL_TRUCKS, OutOfProgramWashing } from '../types';
+import { WashingProgram, OperationalReading, TruckOperatingHours, SHIFT_CONFIG, TruckStatusHistory, INITIAL_TRUCKS, OutOfProgramWashing, OFFICIAL_START_DATE } from '../types';
 import { format, differenceInDays, parseISO } from 'date-fns';
 
 declare module 'jspdf' {
@@ -20,14 +20,25 @@ const loadLogoImage = (url: string): Promise<HTMLImageElement | null> => {
 };
 
 export const generatePDFReport = async (
-  data: WashingProgram[], 
+  raw_data: WashingProgram[], 
   type: string, 
   range: { start: string, end: string }, 
-  readings: OperationalReading[] = [],
-  opHours: TruckOperatingHours[] = [],
-  statusHistory: TruckStatusHistory[] = [],
-  outOfPrograms: OutOfProgramWashing[] = []
+  raw_readings: OperationalReading[] = [],
+  raw_opHours: TruckOperatingHours[] = [],
+  raw_statusHistory: TruckStatusHistory[] = [],
+  raw_outOfPrograms: OutOfProgramWashing[] = []
 ) => {
+  // Determine if the requested period is entirely within Marcha Blanca
+  const isAllMarchaBlanca = range.end < OFFICIAL_START_DATE;
+
+  // If not all Marcha Blanca, we filter out any pre-operational records before July 8th, 2026.
+  // This satisfies both: (1) Keep historical backup; (2) Begin official KPIs on 08-07-2026.
+  const data = isAllMarchaBlanca ? raw_data : raw_data.filter(p => p.date >= OFFICIAL_START_DATE);
+  const readings = isAllMarchaBlanca ? raw_readings : raw_readings.filter(r => r.date >= OFFICIAL_START_DATE);
+  const opHours = isAllMarchaBlanca ? raw_opHours : raw_opHours.filter(h => h.date >= OFFICIAL_START_DATE);
+  const statusHistory = isAllMarchaBlanca ? raw_statusHistory : raw_statusHistory.filter(s => s.date >= OFFICIAL_START_DATE);
+  const outOfPrograms = isAllMarchaBlanca ? raw_outOfPrograms : raw_outOfPrograms.filter(o => o.date >= OFFICIAL_START_DATE);
+
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -78,6 +89,40 @@ export const generatePDFReport = async (
   doc.setDrawColor(226, 232, 240); // Slate 200
   doc.setLineWidth(0.5);
   doc.line(15, 27, pageWidth - 15, 27);
+
+  const containsPreOperational = range.start < OFFICIAL_START_DATE;
+
+  if (isAllMarchaBlanca) {
+    doc.setFillColor(254, 243, 199); // Amber 100
+    doc.rect(15, 31, pageWidth - 30, 14, 'F');
+    doc.setDrawColor(245, 158, 11); // Amber 500
+    doc.setLineWidth(0.3);
+    doc.rect(15, 31, pageWidth - 30, 14, 'D');
+
+    doc.setTextColor(180, 83, 9); // Amber 800
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('DOCUMENTO DE RESPALDO HISTÓRICO - MARCHA BLANCA', 19, 36);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(120, 53, 4); // Amber 900
+    doc.text('Este reporte contiene exclusivamente registros correspondientes al período pre-operativo de pruebas.', 19, 41);
+  } else if (containsPreOperational) {
+    doc.setFillColor(241, 245, 249); // Slate 100
+    doc.rect(15, 31, pageWidth - 30, 14, 'F');
+    doc.setDrawColor(203, 213, 225); // Slate 300
+    doc.setLineWidth(0.3);
+    doc.rect(15, 31, pageWidth - 30, 14, 'D');
+
+    doc.setTextColor(51, 65, 85); // Slate 700
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('INICIO OPERACIONAL OFICIAL: 08-07-2026', 19, 36);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(71, 85, 105); // Slate 600
+    doc.text(`Los registros previos al 08-07-2026 fueron excluidos para reflejar los KPIs y acumulados oficiales.`, 19, 41);
+  }
 
   // Helper to calculate structures/equipments for a WashingProgram based on checklist/cantidad
   const getProgramStructures = (p: WashingProgram) => {
@@ -158,8 +203,8 @@ export const generatePDFReport = async (
       p.programmedQuantity,
       p.status === 'Completo' || p.status === 'Cerrado' ? p.programmedQuantity : (p.completedCount || 0),
       p.status,
-      p.washingOperator || '-',
-      p.truck || '-',
+      p.displayOperatorName || p.washingOperator || '-',
+      p.displayTruckName || p.truck || '-',
       observation.length > 40 ? observation.substring(0, 37) + '...' : observation
     ];
   });
@@ -342,7 +387,7 @@ export const generatePDFReport = async (
     });
 
     statusHistory.forEach(h => {
-      h.trucks.forEach(t => {
+      h.trucks?.forEach(t => {
         if (summary[t.code]) {
           summary[t.code][t.status] = (summary[t.code][t.status] || 0) + 1;
         }
@@ -390,7 +435,7 @@ export const generatePDFReport = async (
     const statusDetailTable = statusHistory.map(h => [
       h.date, 
       h.shift,
-      ...(INITIAL_TRUCKS.map(code => getStatusAbbr(h.trucks.find(t => t.code === code)?.status || '-')))
+      ...(INITIAL_TRUCKS.map(code => getStatusAbbr(h.trucks?.find(t => t.code === code)?.status || '-')))
     ]);
 
     doc.autoTable({
@@ -418,14 +463,14 @@ export const generatePDFReport = async (
       );
       if (isSuspendedDay) {
         return [
-          r.date, r.shift, r.truck,
+          r.date, r.shift, r.displayTruckName || r.truck,
           '—', '—', '—', '—', '—'
         ];
       }
       const tkeReading = r.readings.TKE || r.readings.TKD || { us: 0, temperature: 0, level: 0 };
       const truckTankStr = r.readings.truckTank && r.readings.truckTank.us ? `${r.readings.truckTank.us} / ${r.readings.truckTank.temperature} / ${r.readings.truckTank.level}%` : '-';
       return [
-        r.date, r.shift, r.truck,
+        r.date, r.shift, r.displayTruckName || r.truck,
         `${r.readings.TKA.us} / ${r.readings.TKA.temperature} / ${r.readings.TKA.level}%`,
         `${r.readings.TKC.us} / ${r.readings.TKC.temperature} / ${r.readings.TKC.level}%`,
         `${tkeReading.us} / ${tkeReading.temperature} / ${tkeReading.level}%`,
