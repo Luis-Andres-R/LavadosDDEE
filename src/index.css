@@ -16,3 +16,17 @@
 .glass-morphism {
   @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;
 }
+
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm; /* Removes default browser headers and footers (URL, datetime, generic pages) */
+  }
+  body {
+    padding: 15mm;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

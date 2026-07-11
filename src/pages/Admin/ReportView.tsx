@@ -1232,113 +1232,7 @@ export default function ReportView() {
               </div>
             )}
 
-            {/* 2. Condiciones de Agua y Estanques con Separación visual por escala */}
-            {readings && readings.length > 0 && (
-              <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-xs relative">
-                <div className="mb-4 border-b border-slate-200 pb-2 flex items-center gap-1.5">
-                  <Thermometer className="text-indigo-650 shrink-0" size={18} />
-                  <div>
-                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Comportamiento e Historial de Estanques</h3>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Trazabilidad de conductividad (uS) y temperatura (°C). Agua Potable separada para evitar distorsión de escala.</p>
-                  </div>
-                </div>
-
-                {/* Grilla de gráficos side-by-side */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-2">
-                  {/* 2.1 Conductividad Estanques Industriales */}
-                  {renderWaterChart(
-                    "Conductividad: Estanques Industriales/Camión",
-                    "Conductividad (uS) – TKA, TKC, TKE, Camión",
-                    industrialSeries,
-                    maxIndustrialUs,
-                    "us",
-                    "µS"
-                  )}
-
-                  {/* 2.2 Conductividad Agua Potable */}
-                  {renderWaterChart(
-                    "Conductividad: Agua Potable SQM",
-                    "Conductividad (uS) – Red potable SQM",
-                    potableSeries,
-                    maxPotableUs,
-                    "us",
-                    "µS"
-                  )}
-
-                  {/* 2.3 Temperatura Estanques Industriales */}
-                  {renderWaterChart(
-                    "Temperatura: Estanques Industriales/Camión",
-                    "Temperatura (°C) – TKA, TKC, TKE, Camión",
-                    industrialSeries,
-                    maxIndustrialTemp,
-                    "temp",
-                    "°C"
-                  )}
-
-                  {/* 2.4 Temperatura Agua Potable */}
-                  {renderWaterChart(
-                    "Temperatura: Agua Potable SQM",
-                    "Temperatura (°C) – Red potable SQM",
-                    potableSeries,
-                    maxPotableTemp,
-                    "temp",
-                    "°C"
-                  )}
-                </div>
-
-                {/* Resumen de Niveles de Agua (%) para Hoja 1 */}
-                <div className="mt-6 border-t border-slate-100 pt-5">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Resumen de Niveles de Agua (%) Registrados</p>
-                  <table className="w-full text-[9px] border-collapse bg-slate-50/30 rounded-xl overflow-hidden border border-slate-200 text-center">
-                    <thead>
-                      <tr className="bg-slate-900 text-white font-mono uppercase">
-                        <th className="p-2 text-left border-r border-slate-800">Fecha</th>
-                        <th className="p-2 border-r border-slate-800">Turno</th>
-                        <th className="p-2 border-r border-slate-800">TKA Nivel</th>
-                        <th className="p-2 border-r border-slate-800">TKC Nivel</th>
-                        <th className="p-2 border-r border-slate-800">TKE Nivel</th>
-                        <th className="p-2 border-r border-slate-800">Agua Pot. Nivel</th>
-                        <th className="p-2">Nivel Camión</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono font-bold">
-                      {readings.map((r, idx) => {
-                        const tkeReading = r.readings.TKE || r.readings.TKD;
-                        const truckReading = r.readings.truckTank;
-                        const isSuspendedDay = statusHistory?.some(
-                          h => h.date === r.date && h.shift === r.shift && h.operationStatus !== 'En ejecución' && h.operationStatus !== 'Operativa'
-                        );
-                        return (
-                          <tr key={idx} className="hover:bg-slate-100/40 bg-white">
-                            <td className="p-2 border-r border-slate-100 text-left text-slate-700">{r.date}</td>
-                            <td className="p-2 border-r border-slate-100 text-blue-600">{r.shift}</td>
-                            <td className="p-2 border-r border-slate-100 text-slate-800">
-                              {isSuspendedDay ? '—' : (r.readings.TKA?.level ?? '-')}
-                              {!isSuspendedDay && r.readings.TKA?.level !== undefined && r.readings.TKA?.level !== '' && '%'}
-                            </td>
-                            <td className="p-2 border-r border-slate-100 text-slate-800">
-                              {isSuspendedDay ? '—' : (r.readings.TKC?.level ?? '-')}
-                              {!isSuspendedDay && r.readings.TKC?.level !== undefined && r.readings.TKC?.level !== '' && '%'}
-                            </td>
-                            <td className="p-2 border-r border-slate-100 text-slate-800">
-                              {isSuspendedDay ? '—' : (tkeReading?.level ?? '-')}
-                              {!isSuspendedDay && tkeReading?.level !== undefined && tkeReading?.level !== '' && '%'}
-                            </td>
-                            <td className="p-2 border-r border-slate-100 text-slate-800">
-                              {isSuspendedDay ? '—' : (r.readings.potableWater?.level ?? '-')}
-                              {!isSuspendedDay && r.readings.potableWater?.level !== undefined && r.readings.potableWater?.level !== '' && '%'}
-                            </td>
-                            <td className="p-2 text-indigo-700 font-black">
-                              {isSuspendedDay ? '—' : (truckReading?.level ? `${truckReading.level}%` : '-')}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            {/* Water and tank charts removed here to prevent duplication; they are presented once, fully detailed, in Section 6. */}
           </div>
         </div>
 
@@ -1690,13 +1584,13 @@ export default function ReportView() {
           </section>
         )}
 
-        {/* SECTION 7: CONDICIONES DE AGUA Y ESTANQUES */}
+        {/* SECTION 6: CONDICIONES DE AGUA Y ESTANQUES */}
         {data.readings && data.readings.length > 0 && (
           <section className="mb-14">
             <div className="flex items-center gap-2 mb-4 border-b border-slate-200 pb-2">
               <Thermometer className="text-blue-600 shrink-0" size={22} />
               <div>
-                <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">7. Condiciones de Agua y Estanques</h2>
+                <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">6. Condiciones de Agua y Estanques</h2>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Trazabilidad operativa de conductividad (uS) y temperatura (°C) por estanque</p>
               </div>
             </div>
@@ -1844,10 +1738,9 @@ export default function ReportView() {
         </div>
 
         {/* Brand Footer */}
-        <div className="mt-20 pt-8 border-t border-slate-200 text-center">
+        <div className="mt-12 pt-6 border-t border-slate-200 text-center">
           <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-[0.2em] leading-loose">
-            PROGRAMA DE LAVADOS SQM<br />
-            Control de Lavados DDEE - Informe técnico oficial de adherencia operativa y disponibilidad de activos mecánicos.
+            PROGRAMA DE LAVADOS SQM - Informe de Control de Lavados DDEE
           </p>
         </div>
       </div>

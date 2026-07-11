@@ -488,6 +488,44 @@ export const generatePDFReport = async (
     });
   }
 
+  // Simplified and elegant report closure text
+  let endY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 15 : 200;
+  if (endY > 260) {
+    doc.addPage();
+    endY = 30;
+  }
+  
+  doc.setDrawColor(226, 232, 240); // Slate 200
+  doc.setLineWidth(0.4);
+  doc.line(15, endY, pageWidth - 15, endY);
+  
+  doc.setTextColor(100, 116, 139); // Slate 500
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('DD.EE SQM · Programa de Lavados', 15, endY + 8);
+  
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('Reporte operacional generado automáticamente.', 15, endY + 13);
+
+  // Clean, controlled footer with page numbering on every page
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    
+    // Horizontal thin footer line
+    doc.setDrawColor(241, 245, 249); // Slate 100
+    doc.setLineWidth(0.25);
+    doc.line(15, 282, pageWidth - 15, 282);
+    
+    // Footer texts
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184); // Slate 400
+    doc.text('DD.EE SQM · Programa de Lavados', 15, 288);
+    doc.text(`Página ${i} de ${pageCount}`, pageWidth - 15, 288, { align: 'right' });
+  }
+
   const fileName = `reporte_lavados_${range.start}_${range.end}`;
   doc.save(`${fileName}.pdf`);
 };

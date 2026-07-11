@@ -266,8 +266,8 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                         onChange={(e) => setSelectedShift(e.target.value as ShiftType)}
                         className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none appearance-none cursor-pointer"
                       >
-                        <option value="T39">T39 (Día)</option>
-                        <option value="T44">T44 (Noche)</option>
+                        <option value="T39">T39</option>
+                        <option value="T44">T44</option>
                       </select>
                     </div>
                 </div>
@@ -293,10 +293,11 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
 
         {/* Bloque: Estado General de la Operación */}
         <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-6 mb-8">
-          <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-4 flex items-center gap-2">
+          <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-1 flex items-center gap-2">
             <Calendar size={16} className="text-blue-500" />
             Estado General de la Operación
           </h4>
+          <p className="text-xs text-slate-500 font-medium mb-4">El estado general de la operación refleja la condición global del Programa de Lavados durante el turno y es definido por el encargado de lavado.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <label className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 ml-1">Estado General del Turno</label>
@@ -350,6 +351,14 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-1 flex items-center gap-2">
+            <Truck size={16} className="text-slate-700" />
+            Estado de Flota
+          </h4>
+          <p className="text-xs text-slate-500 font-medium">Los estados de flota reflejan la disponibilidad individual de cada camión durante el turno.</p>
         </div>
 
         {loading ? (
@@ -463,7 +472,7 @@ export default function TruckStatusManager({ onHome }: { onHome?: () => void }) 
                             <div className="mt-6 flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-[8px] font-bold text-slate-400 uppercase tracking-widest">
                                     <History size={10} />
-                                    Act: {truck.updatedBy}
+                                    ACT: registro actualizado
                                 </div>
                                 {isChanged && (
                                     <button 
