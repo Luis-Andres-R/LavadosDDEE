@@ -19,14 +19,40 @@
 
 @media print {
   @page {
-    size: auto;
-    margin: 0mm; /* Removes default browser headers and footers (URL, datetime, generic pages) */
+    size: portrait;
+    margin: 15mm 15mm 15mm 15mm;
   }
   body {
-    padding: 15mm;
+    padding: 0 !important;
+    margin: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  /* Prevent elements from breaking across pages */
+  .print-avoid-break,
+  .print\:break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  /* Force table rows to stay together */
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  /* Repeat table headers on every page */
+  thead {
+    display: table-header-group !important;
+  }
+  /* Keep headers with their following content */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+  /* Prevent graphics from splitting across page breaks */
+  img, svg, canvas {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }

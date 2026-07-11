@@ -526,6 +526,11 @@ export const generatePDFReport = async (
     doc.text(`Página ${i} de ${pageCount}`, pageWidth - 15, 288, { align: 'right' });
   }
 
-  const fileName = `reporte_lavados_${range.start}_${range.end}`;
+  let fileName = '';
+  if (type === 'diario') {
+    fileName = `Informe Diario - ${range.start}`;
+  } else {
+    fileName = `Informe por Periodo - ${range.start} al ${range.end}`;
+  }
   doc.save(`${fileName}.pdf`);
 };

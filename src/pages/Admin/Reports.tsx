@@ -264,12 +264,12 @@ export default function Reports({ onHome }: { onHome?: () => void }) {
             <FileDown size={32} className="text-blue-100 mt-[-10px] mr-[-10px]" />
           </div>
           
-          <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">Generación Oficial PDF</h3>
+          <h3 className="text-xl font-black text-slate-900 tracking-tight mb-2">Generar Reporte</h3>
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8 border-l-4 border-blue-600 pl-4">Documentación Operativa</p>
           
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <ReportButton label="Reporte Diario" onClick={() => handleDownloadPDF('diario')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
-            <ReportButton label="Reporte por Rango" onClick={() => handleDownloadPDF('rango')} icon={<FileDown size={18} />} disabled={loading} color="indigo" />
+            <ReportButton label="Informe Diario" onClick={() => handleDownloadPDF('diario')} icon={<FileDown size={18} />} disabled={loading} color="blue" />
+            <ReportButton label="Informe por Periodo" onClick={() => handleDownloadPDF('rango')} icon={<FileDown size={18} />} disabled={loading} color="indigo" />
           </div>
         </div>
 

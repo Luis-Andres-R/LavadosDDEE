@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { WashingProgram, OperationalReading, TruckOperatingHours, TruckStatusHistory, INITIAL_TRUCKS, OutOfProgramWashing } from '../../types';
 import { format } from 'date-fns';
-import { generatePDFReport } from '../../utils/pdfGenerator';
 import { FileDown, Printer, X, CheckCircle2, AlertCircle, Clock, Thermometer, Truck, Loader2, AlertTriangle, PlayCircle, LogOut } from 'lucide-react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -21,7 +20,6 @@ export default function ReportView() {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [waterHoveredIdx, setWaterHoveredIdx] = useState<number | null>(null);
 
@@ -153,6 +151,16 @@ export default function ReportView() {
 
     loadReport();
   }, []);
+
+  useEffect(() => {
+    if (data) {
+      if (data.type === 'diario') {
+        document.title = `Informe Diario - ${data.range.start}`;
+      } else {
+        document.title = `Informe por Periodo - ${data.range.start} al ${data.range.end}`;
+      }
+    }
+  }, [data]);
 
   // Safe reference for useMemo dependencies
   const rawStatusHistory = data?.statusHistory || [];
@@ -784,39 +792,10 @@ export default function ReportView() {
 
   const handlePrint = () => window.print();
 
-  const handleDownloadPDF = async () => {
-    if (!data) return;
-    setIsGenerating(true);
-    try {
-      await generatePDFReport(
-        data.programs,
-        data.type,
-        data.range,
-        data.readings,
-        data.opHours,
-        data.statusHistory,
-        data.outOfPrograms
-      );
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Error al generar el PDF.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-100 p-8 max-w-5xl mx-auto print:p-0 print:bg-white">
       {/* Action Bar - Hidden on print */}
       <div className="fixed bottom-8 right-8 flex gap-3 print:hidden z-50">
-        <button 
-          onClick={handleDownloadPDF} 
-          disabled={isGenerating} 
-          className="flex items-center gap-2 bg-blue-600 disabled:bg-blue-400 text-white px-6 py-3 rounded-2xl font-bold shadow-2xl hover:bg-blue-700 transition-all active:scale-95"
-        >
-          {isGenerating ? <Loader2 className="animate-spin" size={20} /> : <FileDown size={20} />}
-          Exportar PDF
-        </button>
         <button onClick={handlePrint} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold shadow-2xl hover:bg-slate-800 transition-all active:scale-95">
           <Printer size={20} />
           Obtener reporte
@@ -1236,14 +1215,11 @@ export default function ReportView() {
           </div>
         </div>
 
-        {/* SALTO DE PÁGINA OBLIGATORIO PARA DETALES EN PDF E IMPRESIÓN */}
-        <div className="print:break-after-page mb-14" />
-
         {/* DETALLE COMPLETO DEL REPORTE (PÁGINAS DE DETALLE COMPLETO) */}
         <div className="space-y-12">
           
           {/* SECCIÓN 1: DETALLE DE EJECUCIÓN PROGRAMA OFICIAL */}
-          <section className="print:break-inside-avoid">
+          <section className="mb-14">
             <div className="flex items-center gap-2 mb-4 border-b border-slate-200 pb-2">
               <CheckCircle2 className="text-indigo-600 shrink-0" size={20} />
               <div>
@@ -1307,39 +1283,41 @@ export default function ReportView() {
             </div>
           </div>
 
-          <table className="w-full text-[11px] border-collapse bg-white border border-slate-150">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700">
-                <th className="p-3 text-left border-r border-slate-200">Fecha</th>
-                <th className="p-3 text-left border-r border-slate-200">Línea</th>
-                <th className="p-3 text-left border-r border-slate-200">Tramo / Nombre</th>
-                <th className="p-3 text-center border-r border-slate-200">Prog.</th>
-                <th className="p-3 text-center border-r border-slate-200">Avance</th>
-                <th className="p-3 text-left">Motivo / Operador</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {programs.filter(p => p.status === 'Pendiente' || p.status === 'Parcial').length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">No existen actividades pendientes en el periodo actual. ¡100% de ejecución!</td>
+          <div className="print:break-inside-avoid">
+            <table className="w-full text-[11px] border-collapse bg-white border border-slate-150">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700">
+                  <th className="p-3 text-left border-r border-slate-200">Fecha</th>
+                  <th className="p-3 text-left border-r border-slate-200">Línea</th>
+                  <th className="p-3 text-left border-r border-slate-200">Tramo / Nombre</th>
+                  <th className="p-3 text-center border-r border-slate-200">Prog.</th>
+                  <th className="p-3 text-center border-r border-slate-200">Avance</th>
+                  <th className="p-3 text-left">Motivo / Operador</th>
                 </tr>
-              ) : (
-                programs.filter(p => p.status === 'Pendiente' || p.status === 'Parcial').map((p, index) => (
-                  <tr key={index} className="hover:bg-slate-50/50">
-                    <td className="p-3 border-r border-slate-100 text-slate-600 font-mono">{p.date}</td>
-                    <td className="p-3 border-r border-slate-100 font-bold text-amber-600">{p.line}</td>
-                    <td className="p-3 border-r border-slate-100">{p.washingName}</td>
-                    <td className="p-3 border-r border-slate-100 text-center font-bold text-slate-400">{p.programmedQuantity}</td>
-                    <td className="p-3 border-r border-slate-100 text-center font-black text-amber-600">{p.completedCount || 0} de {p.programmedQuantity}</td>
-                    <td className="p-3 text-slate-600">
-                      <p className="font-semibold">{p.washingOperator || 'Sin operador asignado'}</p>
-                      <p className="text-[10px] text-slate-400 italic">"Pospuesto a falta de condiciones o tiempo"</p>
-                    </td>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {programs.filter(p => p.status === 'Pendiente' || p.status === 'Parcial').length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-400 italic">No existen actividades pendientes en el periodo actual. ¡100% de ejecución!</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  programs.filter(p => p.status === 'Pendiente' || p.status === 'Parcial').map((p, index) => (
+                    <tr key={index} className="hover:bg-slate-50/50">
+                      <td className="p-3 border-r border-slate-100 text-slate-600 font-mono">{p.date}</td>
+                      <td className="p-3 border-r border-slate-100 font-bold text-amber-600">{p.line}</td>
+                      <td className="p-3 border-r border-slate-100">{p.washingName}</td>
+                      <td className="p-3 border-r border-slate-100 text-center font-bold text-slate-400">{p.programmedQuantity}</td>
+                      <td className="p-3 border-r border-slate-100 text-center font-black text-amber-600">{p.completedCount || 0} de {p.programmedQuantity}</td>
+                      <td className="p-3 text-slate-600">
+                        <p className="font-semibold">{p.washingOperator || 'Sin operador asignado'}</p>
+                        <p className="text-[10px] text-slate-400 italic">"Pospuesto a falta de condiciones o tiempo"</p>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         {/* SECTION 3: LAVADOS FUERA DE PROGRAMA */}
@@ -1353,7 +1331,7 @@ export default function ReportView() {
           </div>
 
           {/* OOP Stats Row */}
-          <div className="grid grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-3 gap-6 mb-6 print:break-inside-avoid">
             <div className="border border-indigo-150 p-4 rounded-2xl bg-indigo-50/10 text-center">
               <p className="text-[9px] font-black text-indigo-400 uppercase">Eventos Totales</p>
               <p className="text-2xl font-black text-indigo-600 mt-1">{oopStats.totalRecords} incidentes</p>
@@ -1370,51 +1348,53 @@ export default function ReportView() {
             </div>
           </div>
 
-          <table className="w-full text-[11px] border-collapse bg-white">
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="p-3 text-left border border-slate-700">Fecha / Hora</th>
-                <th className="p-3 text-left border border-slate-700">Línea / Lugar</th>
-                <th className="p-3 text-left border border-slate-700">Descripción / Trabajo</th>
-                <th className="p-3 text-center border border-slate-700">Cantidad</th>
-                <th className="p-3 text-left border border-slate-700">Motivo de Emergencia</th>
-                <th className="p-3 text-center border border-slate-700">Estado</th>
-                <th className="p-3 text-left border border-slate-700">Atendido por</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {outOfPrograms.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-400 italic">No se registraron lavados eventuales ni actividades fuera de programa en este periodo.</td>
+          <div className="print:break-inside-avoid">
+            <table className="w-full text-[11px] border-collapse bg-white">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="p-3 text-left border border-slate-700">Fecha / Hora</th>
+                  <th className="p-3 text-left border border-slate-700">Línea / Lugar</th>
+                  <th className="p-3 text-left border border-slate-700">Descripción / Trabajo</th>
+                  <th className="p-3 text-center border border-slate-700">Cantidad</th>
+                  <th className="p-3 text-left border border-slate-700">Motivo de Emergencia</th>
+                  <th className="p-3 text-center border border-slate-700">Estado</th>
+                  <th className="p-3 text-left border border-slate-700">Atendido por</th>
                 </tr>
-              ) : (
-                outOfPrograms.map((item, index) => (
-                  <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}>
-                    <td className="p-3 border border-slate-100 font-mono text-slate-500 text-[10px]">
-                      <p className="font-bold">{item.date}</p>
-                      <p>{item.detectionTime} hrs ({item.shift})</p>
-                    </td>
-                    <td className="p-3 border border-slate-100 font-bold text-slate-700">{item.areaLocation}</td>
-                    <td className="p-3 border border-slate-100 max-w-[150px] truncate" title={item.description}>{item.description}</td>
-                    <td className="p-3 border border-slate-100 text-center font-black text-indigo-600">{item.quantity}</td>
-                    <td className="p-3 border border-slate-100 text-rose-600 font-bold uppercase text-[9px] tracking-wider">{item.reason}</td>
-                    <td className="p-3 border border-slate-100 text-center">
-                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                        item.status === 'Realizado' ? 'bg-emerald-50 text-emerald-600' :
-                        item.status === 'Pendiente' ? 'bg-amber-50 text-amber-500' : 'bg-indigo-50 text-indigo-600'
-                      }`}>
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="p-3 border border-slate-100 text-[10px] text-slate-600">
-                      <p className="font-bold text-slate-800">{item.washingOperator || item.createdBy || 'Operador'}</p>
-                      <p className="text-[9px] text-slate-400 font-mono uppercase">{item.truck || '-'}</p>
-                    </td>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {outOfPrograms.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">No se registraron lavados eventuales ni actividades fuera de programa en este periodo.</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  outOfPrograms.map((item, index) => (
+                    <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}>
+                      <td className="p-3 border border-slate-100 font-mono text-slate-500 text-[10px]">
+                        <p className="font-bold">{item.date}</p>
+                        <p>{item.detectionTime} hrs ({item.shift})</p>
+                      </td>
+                      <td className="p-3 border border-slate-100 font-bold text-slate-700">{item.areaLocation}</td>
+                      <td className="p-3 border border-slate-100 max-w-[150px] truncate" title={item.description}>{item.description}</td>
+                      <td className="p-3 border border-slate-100 text-center font-black text-indigo-600">{item.quantity}</td>
+                      <td className="p-3 border border-slate-100 text-rose-600 font-bold uppercase text-[9px] tracking-wider">{item.reason}</td>
+                      <td className="p-3 border border-slate-100 text-center">
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                          item.status === 'Realizado' ? 'bg-emerald-50 text-emerald-600' :
+                          item.status === 'Pendiente' ? 'bg-amber-50 text-amber-500' : 'bg-indigo-50 text-indigo-600'
+                        }`}>
+                          {item.status}
+                        </span>
+                      </td>
+                      <td className="p-3 border border-slate-100 text-[10px] text-slate-600">
+                        <p className="font-bold text-slate-800">{item.washingOperator || item.createdBy || 'Operador'}</p>
+                        <p className="text-[9px] text-slate-400 font-mono uppercase">{item.truck || '-'}</p>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         {/* SECTION 4: DISPONIBILIDAD Y HORAS OPERATIVAS */}
@@ -1428,7 +1408,7 @@ export default function ReportView() {
           </div>
 
           {/* VISUAL CHART OF OPERATIONAL HOURS */}
-          <div className="mb-10 bg-slate-50 p-8 rounded-[2rem] border border-slate-200">
+          <div className="mb-10 bg-slate-50 p-8 rounded-[2rem] border border-slate-200 print:break-inside-avoid">
             <h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest mb-6">Visualización Gráfica de Disponibilidad (%)</h4>
             
             <div className="space-y-6">
@@ -1466,40 +1446,42 @@ export default function ReportView() {
             </div>
           </div>
 
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="p-3 text-left border border-slate-700">Camión</th>
-                <th className="p-3 text-center border border-slate-700">Horas Esperadas</th>
-                <th className="p-3 text-center border border-slate-700">Horas Operativas</th>
-                <th className="p-3 text-center border border-slate-700">Horas Descontadas (Fallas)</th>
-                <th className="p-3 text-center border border-slate-700">Disponibilidad %</th>
-                <th className="p-3 text-left border border-slate-700">Observaciones Generales de la Flota</th>
-              </tr>
-            </thead>
-            <tbody>
-              {truckSummary.map((t, idx) => (
-                <tr key={idx} className="border-b border-slate-150 font-medium">
-                  <td className="p-3 font-black text-slate-900 font-mono text-sm">{t.truck}</td>
-                  <td className="p-3 text-center font-mono text-slate-605">{t.expected.toFixed(1)}h</td>
-                  <td className="p-3 text-center font-black font-mono text-slate-800 bg-slate-50/50">{t.operational.toFixed(1)}h</td>
-                  <td className="p-3 text-center text-red-500 font-extrabold font-mono hover:bg-slate-50/30">-{t.deducted.toFixed(1)}h</td>
-                  <td className="p-3 text-center">
-                    <span className={`px-2.5 py-1 rounded-lg font-black font-mono text-xs ${
-                      t.availability >= 90 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                      t.availability >= 70 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-red-50 text-red-600 border border-red-100'
-                    }`}>
-                      {t.availability.toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="p-3 text-slate-500 italic text-[10px]">
-                    {t.reasons.join(', ') || 'Operación regular en servicio'}
-                  </td>
+          <div className="print:break-inside-avoid">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="p-3 text-left border border-slate-700">Camión</th>
+                  <th className="p-3 text-center border border-slate-700">Horas Esperadas</th>
+                  <th className="p-3 text-center border border-slate-700">Horas Operativas</th>
+                  <th className="p-3 text-center border border-slate-700">Horas Descontadas (Fallas)</th>
+                  <th className="p-3 text-center border border-slate-700">Disponibilidad %</th>
+                  <th className="p-3 text-left border border-slate-700">Observaciones Generales de la Flota</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="mt-3 text-[9px] text-slate-400 uppercase font-black tracking-wider">Nota: Todos los cálculos de disponibilidad se fundamentan en una jornada regular asignada de 12 horas teóricas por turno.</p>
+              </thead>
+              <tbody>
+                {truckSummary.map((t, idx) => (
+                  <tr key={idx} className="border-b border-slate-150 font-medium">
+                    <td className="p-3 font-black text-slate-900 font-mono text-sm">{t.truck}</td>
+                    <td className="p-3 text-center font-mono text-slate-605">{t.expected.toFixed(1)}h</td>
+                    <td className="p-3 text-center font-black font-mono text-slate-800 bg-slate-50/50">{t.operational.toFixed(1)}h</td>
+                    <td className="p-3 text-center text-red-500 font-extrabold font-mono hover:bg-slate-50/30">-{t.deducted.toFixed(1)}h</td>
+                    <td className="p-3 text-center">
+                      <span className={`px-2.5 py-1 rounded-lg font-black font-mono text-xs ${
+                        t.availability >= 90 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
+                        t.availability >= 70 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-red-50 text-red-600 border border-red-100'
+                      }`}>
+                        {t.availability.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-500 italic text-[10px]">
+                      {t.reasons.join(', ') || 'Operación regular en servicio'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-3 text-[9px] text-slate-400 uppercase font-black tracking-wider">Nota: Todos los cálculos de disponibilidad se fundamentan en una jornada regular asignada de 12 horas teóricas por turno.</p>
+          </div>
         </section>
 
         {/* SECTION 5: DETALLE SEPARADO POR DÍA */}
@@ -1517,7 +1499,7 @@ export default function ReportView() {
               {(() => {
                 const dailyData = getDailyDetails();
                 return dailyData.map((day, dIdx) => (
-                  <div key={dIdx} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                  <div key={dIdx} className="bg-slate-50 p-6 rounded-2xl border border-slate-200 print:break-inside-avoid">
                     <h3 className="text-sm font-black text-slate-850 font-mono mb-4 border-b border-slate-200 pb-2 flex justify-between">
                       <span>FECHA: {day.date}</span>
                       <span className="text-[10px] text-indigo-600 font-bold uppercase">
@@ -1596,7 +1578,7 @@ export default function ReportView() {
             </div>
 
             {/* Consolidated Charts Card with SVG */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative mb-8">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative mb-8 print:break-inside-avoid">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-2">
                 {/* 2.1 Conductividad Estanques Industriales */}
                 {renderWaterChart(
@@ -1641,7 +1623,7 @@ export default function ReportView() {
             </div>
 
             {/* Level % Display Table (retrocompatible and exhaustive) */}
-            <div className="mt-8">
+            <div className="mt-8 print:break-inside-avoid">
               <p className="text-[10px] font-black text-slate-400 uppercase mb-3 ml-1 tracking-widest">Detalle de Niveles de Agua (%) Registrados</p>
               <table className="w-full text-[10px] border-collapse bg-white rounded-xl overflow-hidden border border-slate-200">
                 <thead>
@@ -1699,7 +1681,7 @@ export default function ReportView() {
         {/* SECTION 6: HISTÓRICO DE ESTADO DE CAMIONES */}
         <section className="mb-12">
           {statusHistory.length > 0 && (
-            <>
+            <div className="print:break-inside-avoid">
               <p className="text-[10px] font-black text-slate-400 uppercase mb-3 ml-1 tracking-widest">Detalle de Estados Registrados por Turno</p>
               <table className="w-full text-[10px] border-collapse bg-white rounded-xl overflow-hidden border border-slate-200">
                 <thead>
@@ -1731,7 +1713,7 @@ export default function ReportView() {
                   ))}
                 </tbody>
               </table>
-            </>
+            </div>
           )}
         </section>
 
